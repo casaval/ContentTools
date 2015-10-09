@@ -4,7 +4,7 @@ class SetColorPrimary extends ContentTools.Tools.Bold
 
     @label = 'Set Color Primary'
     @icon = 'set-color-primary'
-    @className = 'text-primary'
+    @className = 'bg-primary'
 
     @canApply: (element, select) ->
       # Return true if the tool can be applied to the current
@@ -33,7 +33,14 @@ class SetColorPrimary extends ContentTools.Tools.Bold
             element = element.parent()
 
         # Remove any existing text alignment classes applied
-        for className in ['text-center', 'text-left', 'text-right']
+        for className in [
+          'text-default',
+          'bg-primary',
+          'bg-success',
+          'bg-info',
+          'bg-warning',
+          'bg-danger',
+        ]
             if element.hasCSSClass(className)
                 element.removeCSSClass(className)
 
@@ -47,29 +54,45 @@ class SetColorPrimary extends ContentTools.Tools.Bold
 
         callback(true)
 
+class SetColorDefault extends SetColorPrimary
+  ContentTools.ToolShelf.stow(@, 'set-color-default')
+
+  @label = 'Set Color Default'
+  @icon = 'set-color-default'
+  @className = 'text-default'
+
 class SetColorSuccess extends SetColorPrimary
   ContentTools.ToolShelf.stow(@, 'set-color-success')
 
   @label = 'Set Color Success'
   @icon = 'set-color-success'
-  @className = 'text-success'
+  @className = 'bg-success'
 
 class SetColorDanger extends SetColorPrimary
   ContentTools.ToolShelf.stow(@, 'set-color-danger')
 
   @label = 'Set Color Danger'
   @icon = 'set-color-danger'
-  @className = 'text-danger'
+  @className = 'bg-danger'
 
 class SetColorWarning extends SetColorPrimary
   ContentTools.ToolShelf.stow(@, 'set-color-warning')
 
   @label = 'Set Color Warning'
   @icon = 'set-color-warning'
-  @className = 'text-warning'
+  @className = 'bg-warning'
+
+class SetColorInfo extends SetColorPrimary
+  ContentTools.ToolShelf.stow(@, 'set-color-info')
+
+  @label = 'Set Color Info'
+  @icon = 'set-color-info'
+  @className = 'bg-info'
 
 
+ContentTools.DEFAULT_TOOLS[0].push('set-color-default')
 ContentTools.DEFAULT_TOOLS[0].push('set-color-primary')
 ContentTools.DEFAULT_TOOLS[0].push('set-color-success')
+ContentTools.DEFAULT_TOOLS[0].push('set-color-info')
 ContentTools.DEFAULT_TOOLS[0].push('set-color-warning')
 ContentTools.DEFAULT_TOOLS[0].push('set-color-danger')

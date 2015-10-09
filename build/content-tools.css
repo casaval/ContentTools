@@ -144,7 +144,7 @@
   .ce-element--drop-right {
     background-image: url("images/ce-drop-right.png") !important; }
   .ce-element--focused, .ce-element--over {
-    background-color: rgba(243, 156, 18, 0.1);
+    box-shadow: 1px 1px 5px #eee;
     outline: none;
     /**
      * For images and videos we add an outline so as not to distort their
@@ -1880,6 +1880,55 @@ supported child elements.
       content: "\e966"; }
     .ct-widget .ct-tool--remove:before {
       content: "\e9ac"; }
+
+/* LSP Custom Styles */
+.text-default {
+  color: #222; }
+
+.text-info {
+  color: #5bc0de; }
+
+.ct-tool--set-color-default {
+  background-color: #222; }
+  .ct-tool--set-color-default.ct-tool--disabled:hover {
+    background: #222; }
+  .ct-tool--set-color-default.ct-tool--applied {
+    background-color: black; }
+
+.ct-tool--set-color-primary {
+  background-color: #337ab7; }
+  .ct-tool--set-color-primary.ct-tool--disabled:hover {
+    background: #337ab7; }
+  .ct-tool--set-color-primary.ct-tool--applied {
+    background-color: #1d4567; }
+
+.ct-tool--set-color-success {
+  background-color: #5cb85c; }
+  .ct-tool--set-color-success.ct-tool--disabled:hover {
+    background: #5cb85c; }
+  .ct-tool--set-color-success.ct-tool--applied {
+    background-color: #357935; }
+
+.ct-tool--set-color-warning {
+  background-color: #f0ad4e; }
+  .ct-tool--set-color-warning.ct-tool--disabled:hover {
+    background: #f0ad4e; }
+  .ct-tool--set-color-warning.ct-tool--applied {
+    background-color: #c77c11; }
+
+.ct-tool--set-color-danger {
+  background-color: #d9534f; }
+  .ct-tool--set-color-danger.ct-tool--disabled:hover {
+    background: #d9534f; }
+  .ct-tool--set-color-danger.ct-tool--applied {
+    background-color: #a02622; }
+
+.ct-tool--set-color-info {
+  background-color: #5bc0de; }
+  .ct-tool--set-color-info.ct-tool--disabled:hover {
+    background: #5bc0de; }
+  .ct-tool--set-color-info.ct-tool--applied {
+    background-color: #2390b0; }
 
 /**
  * The highlight class below is used to highlight editable regions within the

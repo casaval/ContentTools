@@ -182,7 +182,8 @@ $image-path-prefix: 'images/';
      */
     &--focused,
     &--over {
-        background-color: rgba(#f39c12, 0.1);
+        // background-color: rgba(#222, 0.1);
+        box-shadow: 1px 1px 5px #eee;
         outline: none;
 
         /**

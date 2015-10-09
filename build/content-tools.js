@@ -4751,7 +4751,7 @@
 
 }).call(this);
 (function() {
-  var AttributeUI, CropMarksUI, SetColorDanger, SetColorPrimary, SetColorSuccess, SetColorWarning, StyleUI, _EditorApp,
+  var AttributeUI, CropMarksUI, SetColorDanger, SetColorDefault, SetColorInfo, SetColorPrimary, SetColorSuccess, SetColorWarning, StyleUI, _EditorApp,
     slice = [].slice,
     extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty,
@@ -8762,7 +8762,7 @@
 
     SetColorPrimary.icon = 'set-color-primary';
 
-    SetColorPrimary.className = 'text-primary';
+    SetColorPrimary.className = 'bg-primary';
 
     SetColorPrimary.canApply = function(element, select) {
       return element.content !== void 0;
@@ -8784,7 +8784,7 @@
       if ((ref = element.constructor.name) === 'ListItemText' || ref === 'TableCellText') {
         element = element.parent();
       }
-      ref1 = ['text-center', 'text-left', 'text-right'];
+      ref1 = ['text-default', 'bg-primary', 'bg-success', 'bg-info', 'bg-warning', 'bg-danger'];
       for (j = 0, len = ref1.length; j < len; j++) {
         className = ref1[j];
         if (element.hasCSSClass(className)) {
@@ -8802,6 +8802,25 @@
 
   })(ContentTools.Tools.Bold);
 
+  SetColorDefault = (function(superClass) {
+    extend(SetColorDefault, superClass);
+
+    function SetColorDefault() {
+      return SetColorDefault.__super__.constructor.apply(this, arguments);
+    }
+
+    ContentTools.ToolShelf.stow(SetColorDefault, 'set-color-default');
+
+    SetColorDefault.label = 'Set Color Default';
+
+    SetColorDefault.icon = 'set-color-default';
+
+    SetColorDefault.className = 'text-default';
+
+    return SetColorDefault;
+
+  })(SetColorPrimary);
+
   SetColorSuccess = (function(superClass) {
     extend(SetColorSuccess, superClass);
 
@@ -8815,7 +8834,7 @@
 
     SetColorSuccess.icon = 'set-color-success';
 
-    SetColorSuccess.className = 'text-success';
+    SetColorSuccess.className = 'bg-success';
 
     return SetColorSuccess;
 
@@ -8834,7 +8853,7 @@
 
     SetColorDanger.icon = 'set-color-danger';
 
-    SetColorDanger.className = 'text-danger';
+    SetColorDanger.className = 'bg-danger';
 
     return SetColorDanger;
 
@@ -8853,15 +8872,38 @@
 
     SetColorWarning.icon = 'set-color-warning';
 
-    SetColorWarning.className = 'text-warning';
+    SetColorWarning.className = 'bg-warning';
 
     return SetColorWarning;
 
   })(SetColorPrimary);
 
+  SetColorInfo = (function(superClass) {
+    extend(SetColorInfo, superClass);
+
+    function SetColorInfo() {
+      return SetColorInfo.__super__.constructor.apply(this, arguments);
+    }
+
+    ContentTools.ToolShelf.stow(SetColorInfo, 'set-color-info');
+
+    SetColorInfo.label = 'Set Color Info';
+
+    SetColorInfo.icon = 'set-color-info';
+
+    SetColorInfo.className = 'bg-info';
+
+    return SetColorInfo;
+
+  })(SetColorPrimary);
+
+  ContentTools.DEFAULT_TOOLS[0].push('set-color-default');
+
   ContentTools.DEFAULT_TOOLS[0].push('set-color-primary');
 
   ContentTools.DEFAULT_TOOLS[0].push('set-color-success');
+
+  ContentTools.DEFAULT_TOOLS[0].push('set-color-info');
 
   ContentTools.DEFAULT_TOOLS[0].push('set-color-warning');
 

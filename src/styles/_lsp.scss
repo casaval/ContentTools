@@ -1,0 +1,83 @@
+//== Colors
+//
+//## Gray and brand colors for use across Bootstrap.
+
+$gray-base:              #000;
+$gray-darker:            #222;
+$gray-dark:              #333;
+$gray:                   #555;
+$gray-light:             #777;
+$gray-lighter:           #eee;
+
+$brand-primary:         #337ab7;
+$brand-success:         #5cb85c;
+$brand-info:            #5bc0de;
+$brand-warning:         #f0ad4e;
+$brand-danger:          #d9534f;
+
+.text-default {
+  color: $gray-darker;
+}
+
+.text-info {
+  color: $brand-info;
+}
+
+.ct-tool--set-color-default {
+  background-color: $gray-darker;
+  &.ct-tool--disabled:hover {
+    background: $gray-darker;
+  }
+  &.ct-tool--applied {
+    background-color: darken($gray-darker, 20%);
+  }
+}
+.ct-tool--set-color-primary {
+  background-color: $brand-primary;
+  &.ct-tool--disabled:hover {
+    background: $brand-primary;
+  }
+  &.ct-tool--applied {
+    background-color: darken($brand-primary, 20%);
+  }
+}
+.ct-tool--set-color-success {
+  background-color: $brand-success;
+  &.ct-tool--disabled:hover {
+    background: $brand-success;
+  }
+  &.ct-tool--applied {
+    background-color: darken($brand-success, 20%);
+  }
+}
+.ct-tool--set-color-warning {
+  background-color: $brand-warning;
+  &.ct-tool--disabled:hover {
+    background: $brand-warning;
+  }
+  &.ct-tool--applied {
+    background-color: darken($brand-warning, 20%);
+  }
+}
+.ct-tool--set-color-danger  {
+  background-color: $brand-danger;
+  &.ct-tool--disabled:hover {
+    background: $brand-danger;
+  }
+  &.ct-tool--applied {
+    background-color: darken($brand-danger, 20%);
+  }
+}
+.ct-tool--set-color-info {
+  background-color: $brand-info;
+  &.ct-tool--disabled:hover {
+    background: $brand-info;
+  }
+  &.ct-tool--applied {
+    background-color: darken($brand-info, 20%);
+  }
+}
+
+.ct-tool--applied {
+
+}
