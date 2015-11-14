@@ -3,6 +3,12 @@
  * A prefix appended to all background-image URLs.
  */
 /**
+ * Colours common to the UI,
+ */
+/**
+ * A mixin for performing a rotate transform across multiple browsers.
+ */
+/**
  * The modifier classes here are applied by the root node and indicate the
  * the state of the root node managing interactions (e.g dragging and resizing).
  */
@@ -99,7 +105,7 @@
     background-position: 0 0;
     background-size: cover; }
   .ce-element--type-video {
-    background: #333 url("images/video.png") center center no-repeat; }
+    background: #333 url("images/video.svg") center/auto 48px no-repeat; }
     .ce-element--type-video:after {
       bottom: 10px;
       content: attr(data-ce-title);
@@ -126,25 +132,39 @@
       opacity: 1.0;
       outline-color: rgba(51, 51, 51, 0.1) !important; }
   .ce-element--drop {
-    background: rgba(243, 156, 18, 0.5) none 0 0 repeat !important;
-    /**
-     * We remove any background from child elements contained within
-     * elements such as lists, tables and table rows to prevent layering
-     * where the child elements appearance clashes with the parents.
-     */ }
-    .ce-element--drop .ce-element--type-list-item-text,
-    .ce-element--drop .ce-element--type-table-cell-text {
-      background: transparent !important; }
-  .ce-element--drop-above {
-    background-image: url("images/ce-drop-above.png") !important; }
-  .ce-element--drop-below {
-    background-image: url("images/ce-drop-below.png") !important; }
-  .ce-element--drop-left {
-    background-image: url("images/ce-drop-left.png") !important; }
-  .ce-element--drop-right {
-    background-image: url("images/ce-drop-right.png") !important; }
+    position: relative !important; }
+    .ce-element--drop:before {
+      background: #f39c12 url("images/drop-vert.svg") center/auto 32px repeat;
+      bottom: 0;
+      content: '' !important;
+      left: 0;
+      opacity: 0.8;
+      position: absolute;
+      right: 0;
+      top: 0;
+      z-index: 9; }
+  .ce-element--drop-below:before {
+    -ms-transform: rotate(180deg);
+    /* IE 9 */
+    -webkit-transform: rotate(180deg);
+    /* Chrome, Safari, Opera */
+    transform: rotate(180deg); }
+  .ce-element--drop-left:before {
+    background-image: url("images/drop-horz.svg");
+    -ms-transform: rotate(0deg);
+    /* IE 9 */
+    -webkit-transform: rotate(0deg);
+    /* Chrome, Safari, Opera */
+    transform: rotate(0deg); }
+  .ce-element--drop-right:before {
+    background-image: url("images/drop-horz.svg");
+    -ms-transform: rotate(180deg);
+    /* IE 9 */
+    -webkit-transform: rotate(180deg);
+    /* Chrome, Safari, Opera */
+    transform: rotate(180deg); }
   .ce-element--focused, .ce-element--over {
-    box-shadow: 1px 1px 5px #eee;
+    background-color: rgba(243, 156, 18, 0.1);
     outline: none;
     /**
      * For images and videos we add an outline so as not to distort their

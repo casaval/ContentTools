@@ -19,6 +19,10 @@ class _EditorApp extends ContentTools.ComponentUI
         # A list of the mapped regions used to determine their order
         @_orderedRegions = null
 
+        # The last modified dates for the root node and regions
+        @_rootLastModified = null
+        @_regionsLastModified = {}
+
         # The UI widgets that form the editor's interface
         @_ignition = null
         @_inspector = null
@@ -51,14 +55,22 @@ class _EditorApp extends ContentTools.ComponentUI
         # the ignition).
         return @_ignition.busy(busy)
 
-    init: (query, namingProp='id') ->
+    init: (queryOrDOMElements, namingProp='id') ->
         # Initialize the editor application
 
         # The property used to extract a name/key for a region
         @_namingProp = namingProp
 
-        # Select DOM elements that have been flagged as editable content
-        @_domRegions = document.querySelectorAll(query)
+        # Assign the DOM regions
+        if queryOrDOMElements.length > 0 and
+                queryOrDOMElements[0].nodeType is Node.ELEMENT_NODE
+            # If a list has been provided then assume it contains a list of DOM
+            # elements each of which is a region.
+            @_domRegions = queryOrDOMElements
+        else
+            # If a CSS query has been specified then use that to select the
+            # regions in the DOM.
+            @_domRegions = document.querySelectorAll(queryOrDOMElements)
 
         # If there aren't any editiable regions return early leaving the app
         # DORMANT.
@@ -76,6 +88,18 @@ class _EditorApp extends ContentTools.ComponentUI
             @start()
 
         @_ignition.bind 'stop', (save) =>
+            # HACK: We can't currently capture certain changes to text
+            # elements (for example deletion of a section of text from the
+            # context menu option). Long-term mutation observers or
+            # consistent support for the `input` event against
+            # `contenteditable` elements would resolve this.
+            #
+            # For now though we manually perform a content sync if an
+            # element supporting that method has focus.
+            focused = ContentEdit.Root.get().focused()
+            if focused and focused._syncContent != undefined
+                focused._syncContent()
+
             if save
                 @save()
             else
@@ -183,7 +207,7 @@ class _EditorApp extends ContentTools.ComponentUI
 
     mount: () ->
         # Mount the widget to the DOM
-        @_domElement = @createDiv(['ct-app'])
+        @_domElement = @constructor.createDiv(['ct-app'])
         document.body.insertBefore(@_domElement, null)
         @_addDOMEventListeners()
 
@@ -278,11 +302,19 @@ class _EditorApp extends ContentTools.ComponentUI
 
     unmount: () ->
         # Unmount the widget from the DOM
+
+        # Check the editor is mounted
+        if not @isMounted()
+            return
+
+        # Remove the DOM element
         @_domElement.parentNode.removeChild(@_domElement)
         @_domElement = null
 
+        # Remove any DOM event bindings
         @_removeDOMEventListeners()
 
+        # Reset child component handles
         @_ignition = null
         @_inspector = null
         @_toolbox = null
@@ -295,8 +327,9 @@ class _EditorApp extends ContentTools.ComponentUI
 
         # Check if there are any changes, and if there are make the user confirm
         # they want to lose them.
-        if ContentEdit.Root.get().lastModified() and not window.confirm(
-                ContentEdit._('Your changes have not been saved, do you really want to lose them?'))
+        confirmMessage = ContentEdit._('Your changes have not been saved, do you really want to lose them?')
+        if ContentEdit.Root.get().lastModified() > @_rootLastModified and
+                not window.confirm(confirmMessage)
             return false
 
         # Revert the page to it's initial state
@@ -336,7 +369,8 @@ class _EditorApp extends ContentTools.ComponentUI
         # Save changes to the current page
 
         # Check the document has changed, if not we don't need do anything
-        if not ContentEdit.Root.get().lastModified() and passive
+        root = ContentEdit.Root.get()
+        if root.lastModified() == @_rootLastModified and passive
             return
 
         # Build a map of the modified regions
@@ -349,12 +383,17 @@ class _EditorApp extends ContentTools.ComponentUI
                 if child.content and not child.content.html()
                     html = ''
 
-            modifiedRegions[name] = html
-
             # Apply the changes made to the DOM (affectively reseting the DOM to
             # a non-editable state).
             unless passive
-                region.domElement().innerHTML = modifiedRegions[name]
+                region.domElement().innerHTML = html
+
+            # Check the region has been modified, if not we don't include it in
+            # the output.
+            if region.lastModified() == @_regionsLastModified[name]
+                continue
+
+            modifiedRegions[name] = html
 
         # Trigger the save event with a region HTML map for the changed
         # content.
@@ -381,8 +420,16 @@ class _EditorApp extends ContentTools.ComponentUI
             @_regions[name] = new ContentEdit.Region(domRegion)
             @_orderedRegions.push(name)
 
+            # Store the date at which the region was last modified so we can
+            # check for changes on save.
+            @_regionsLastModified[name] = @_regions[name].lastModified()
+
         # Ensure no region is empty
         @_preventEmptyRegions()
+
+        # Store the date at which the root was last modified so we can check for
+        # changes on save.
+        @_rootLastModified = ContentEdit.Root.get().lastModified()
 
         # Create a new history instance to store the page changes against
         @history = new ContentTools.History(@_regions)
@@ -390,9 +437,6 @@ class _EditorApp extends ContentTools.ComponentUI
 
         # Set the application state to editing
         @_state = ContentTools.EditorApp.EDITING
-
-        # Mark the document as untainted
-        ContentEdit.Root.get().commit()
 
         # Display the editing tools
         @_toolbox.show()
@@ -488,6 +532,10 @@ class _EditorApp extends ContentTools.ComponentUI
             # becoming empty.
             placeholder = new ContentEdit.Text('p', {}, '')
             region.attach(placeholder)
+
+            # This action will mark the region as modified which it technically
+            # isn't and so we commit the change to nullify this.
+            region.commit()
 
     _removeDOMEventListeners: () ->
         # Remove DOM event listeners for the widget

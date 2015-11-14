@@ -14,14 +14,14 @@ class ContentTools.InspectorUI extends ContentTools.WidgetUI
         # Mount the widget to the DOM
 
         # Inspector
-        @_domElement = @createDiv([
+        @_domElement = @constructor.createDiv([
             'ct-widget',
             'ct-inspector'
             ])
         @parent().domElement().appendChild(@_domElement)
 
         # Tags
-        @_domTags = @createDiv([
+        @_domTags = @constructor.createDiv([
             'ct-inspector__tags',
             'ct-tags'
             ])
@@ -61,6 +61,8 @@ class ContentTools.InspectorUI extends ContentTools.WidgetUI
         for tag in @_tagUIs
             tag.unmount()
 
+        @_tagUIs = []
+
         # If there's no element selected we're done
         if not element
             return
@@ -97,7 +99,7 @@ class ContentTools.TagUI extends ContentTools.AnchoredComponentUI
     mount: (domParent, before=null) ->
         # Mount the component to the DOM
 
-        @_domElement = @createDiv(['ct-tag'])
+        @_domElement = @constructor.createDiv(['ct-tag'])
         @_domElement.textContent = @element.tagName()
 
         super(domParent, before)

@@ -109,6 +109,13 @@ module.exports = (grunt) ->
         clean:
             build: ['src/tmp']
 
+        jasmine:
+            build:
+                src: ['build/content-tools.js']
+                options:
+                    specs: 'spec/content-tools-spec.js'
+                    helpers: 'spec/spec-helper.js'
+
         watch:
             build:
                 files: [
@@ -133,6 +140,7 @@ module.exports = (grunt) ->
     grunt.loadNpmTasks 'grunt-contrib-clean'
     grunt.loadNpmTasks 'grunt-contrib-coffee'
     grunt.loadNpmTasks 'grunt-contrib-concat'
+    grunt.loadNpmTasks 'grunt-contrib-jasmine'
     grunt.loadNpmTasks 'grunt-contrib-sass'
     grunt.loadNpmTasks 'grunt-contrib-uglify'
     grunt.loadNpmTasks 'grunt-contrib-watch'

@@ -290,13 +290,16 @@
         for (_l = 0, _len3 = _ref2.length; _l < _len3; _l++) {
           tag = _ref2[_l];
           if (openHeads.indexOf(tag.head()) === -1) {
-            head = tag.head();
-            html += head;
             if (!tag.selfClosing()) {
+              head = tag.head();
+              html += head;
               openTags.push(tag);
               openHeads.push(head);
             }
           }
+        }
+        if (c._tags.length > 0 && c._tags[0].selfClosing()) {
+          html += c._tags[0].head();
         }
         html += c.c();
       }
@@ -309,7 +312,7 @@
     };
 
     String.prototype.indexOf = function(substring, from) {
-      var c, found, i, skip, _i, _j, _len, _len1, _ref;
+      var c, found, i, _i, _len, _ref;
       if (from == null) {
         from = 0;
       }
@@ -317,34 +320,12 @@
         from = 0;
       }
       if (typeof substring === 'string') {
-        if (!this.contains(substring)) {
-          return -1;
-        }
-        substring = substring.split('');
-        while (from <= (this.length() - substring.length)) {
-          found = true;
-          skip = 0;
-          for (i = _i = 0, _len = substring.length; _i < _len; i = ++_i) {
-            c = substring[i];
-            if (this.characters[i + from].isTag()) {
-              skip += 1;
-            }
-            if (c !== this.characters[skip + i + from].c()) {
-              found = false;
-              break;
-            }
-          }
-          if (found) {
-            return from;
-          }
-          from++;
-        }
-        return -1;
+        return this.text().indexOf(substring, from);
       }
       while (from <= (this.length() - substring.length())) {
         found = true;
         _ref = substring.characters;
-        for (i = _j = 0, _len1 = _ref.length; _j < _len1; i = ++_j) {
+        for (i = _i = 0, _len = _ref.length; _i < _len; i = ++_i) {
           c = _ref[i];
           if (!c.eq(this.characters[i + from])) {
             found = false;
@@ -1029,7 +1010,7 @@
         tag = this.tags.pop();
         if (this.string.length()) {
           character = this.string.characters[this.string.length() - 1];
-          if (!character.isTag() && character.isWhitespace()) {
+          if (!character.isTag() && !character.isEntity() && character.isWhitespace()) {
             character.removeTags(tag);
           }
         }
@@ -1325,6 +1306,7 @@
   })();
 
 }).call(this);
+
 (function() {
   var SELF_CLOSING_NODE_NAMES, _containedBy, _getChildNodeAndOffset, _getNodeRange, _getOffsetOfChildNode,
     __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
@@ -2187,23 +2169,33 @@
     };
 
     Element.prototype.drag = function(x, y) {
+      var root;
       if (!this.isMounted()) {
         return;
       }
-      return ContentEdit.Root.get().startDragging(this, x, y);
+      root = ContentEdit.Root.get();
+      root.startDragging(this, x, y);
+      return root.trigger('drag', this);
     };
 
     Element.prototype.drop = function(element, placement) {
+      var root;
+      root = ContentEdit.Root.get();
       if (element) {
         element._removeCSSClass('ce-element--drop');
         element._removeCSSClass("ce-element--drop-" + placement[0]);
         element._removeCSSClass("ce-element--drop-" + placement[1]);
         if (this.constructor.droppers[element.constructor.name]) {
-          return this.constructor.droppers[element.constructor.name](this, element, placement);
+          this.constructor.droppers[element.constructor.name](this, element, placement);
+          root.trigger('drop', this, element, placement);
+          return;
         } else if (element.constructor.droppers[this.constructor.name]) {
-          return element.constructor.droppers[this.constructor.name](this, element, placement);
+          element.constructor.droppers[this.constructor.name](this, element, placement);
+          root.trigger('drop', this, element, placement);
+          return;
         }
       }
+      return root.trigger('drop', this, null, null);
     };
 
     Element.prototype.focus = function(supressDOMFocus) {
@@ -3160,12 +3152,20 @@
     };
 
     Text.prototype.blur = function() {
+      var error;
+      if (this.isMounted()) {
+        this._syncContent();
+      }
       if (this.content.isWhitespace()) {
         if (this.parent()) {
           this.parent().detach(this);
         }
       } else if (this.isMounted()) {
-        this._domElement.blur();
+        try {
+          this._domElement.blur();
+        } catch (_error) {
+          error = _error;
+        }
         this._domElement.removeAttribute('contenteditable');
       }
       return Text.__super__.blur.call(this);
@@ -3289,14 +3289,7 @@
     };
 
     Text.prototype._onKeyUp = function(ev) {
-      var newSnaphot, snapshot;
-      snapshot = this.content.html();
-      this.content = new HTMLString.String(this._domElement.innerHTML, this.content.preserveWhitespace());
-      newSnaphot = this.content.html();
-      if (snapshot !== newSnaphot) {
-        this.taint();
-      }
-      return this._flagIfEmpty();
+      return this._syncContent();
     };
 
     Text.prototype._onMouseDown = function(ev) {
@@ -3338,6 +3331,7 @@
       }
       ev.preventDefault();
       previous = this.previousContent();
+      this._syncContent();
       if (previous) {
         return previous.merge(this);
       }
@@ -3448,6 +3442,17 @@
       }
     };
 
+    Text.prototype._syncContent = function(ev) {
+      var newSnaphot, snapshot;
+      snapshot = this.content.html();
+      this.content = new HTMLString.String(this._domElement.innerHTML, this.content.preserveWhitespace());
+      newSnaphot = this.content.html();
+      if (snapshot !== newSnaphot) {
+        this.taint();
+      }
+      return this._flagIfEmpty();
+    };
+
     Text.droppers = {
       'Static': ContentEdit.Element._dropVert,
       'Text': ContentEdit.Element._dropVert
@@ -3461,7 +3466,7 @@
           target.content = target.content.concat(element.content);
         }
         if (target.isMounted()) {
-          target._domElement.innerHTML = target.content.html();
+          target.updateInnerHTML();
         }
         target.focus();
         new ContentSelect.Range(offset, offset).select(target._domElement);
@@ -3514,6 +3519,27 @@
         this._cached = content.html();
       }
       return ("" + indent + "<" + this._tagName + (this._attributesToString()) + ">") + ("" + this._cached + "</" + this._tagName + ">");
+    };
+
+    PreText.prototype.updateInnerHTML = function() {
+      var html;
+      html = this.content.html();
+      html += '\n';
+      this._domElement.innerHTML = html;
+      ContentSelect.Range.prepareElement(this._domElement);
+      return this._flagIfEmpty();
+    };
+
+    PreText.prototype._onKeyUp = function(ev) {
+      var html, newSnaphot, snapshot;
+      snapshot = this.content.html();
+      html = this._domElement.innerHTML.replace(/[\n]$/, '');
+      this.content = new HTMLString.String(html, this.content.preserveWhitespace());
+      newSnaphot = this.content.html();
+      if (snapshot !== newSnaphot) {
+        this.taint();
+      }
+      return this._flagIfEmpty();
     };
 
     PreText.prototype._keyReturn = function(ev) {
@@ -4750,12 +4776,13 @@
   })(ContentEdit.Text);
 
 }).call(this);
+
 (function() {
   var AttributeUI, CropMarksUI, SetColorDanger, SetColorDefault, SetColorInfo, SetColorPrimary, SetColorSuccess, SetColorWarning, StyleUI, _EditorApp,
-    slice = [].slice,
-    extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-    hasProp = {}.hasOwnProperty,
-    bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
+    __slice = [].slice,
+    __hasProp = {}.hasOwnProperty,
+    __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
+    __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
   window.ContentTools = {
     Tools: {},
@@ -4771,7 +4798,7 @@
       'iframe': ['height', 'width']
     },
     getEmbedVideoURL: function(url) {
-      var domains, id, j, kv, len, m, netloc, params, paramsStr, parser, path, ref;
+      var domains, id, kv, m, netloc, params, paramsStr, parser, path, _i, _len, _ref;
       domains = {
         'www.youtube.com': 'youtube',
         'youtu.be': 'youtube',
@@ -4787,9 +4814,9 @@
       }
       params = {};
       paramsStr = parser.search.slice(1);
-      ref = paramsStr.split('&');
-      for (j = 0, len = ref.length; j < len; j++) {
-        kv = ref[j];
+      _ref = paramsStr.split('&');
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        kv = _ref[_i];
         kv = kv.split("=");
         params[kv[0]] = kv[1];
       }
@@ -4835,12 +4862,12 @@
       return this._domElement;
     };
 
-    ComponentUI.prototype.parent = function() {
-      return this._parent;
-    };
-
     ComponentUI.prototype.isMounted = function() {
       return this._domElement !== null;
+    };
+
+    ComponentUI.prototype.parent = function() {
+      return this._parent;
     };
 
     ComponentUI.prototype.attach = function(component, index) {
@@ -4862,7 +4889,14 @@
       return ContentEdit.addCSSClass(this._domElement, className);
     };
 
-    ComponentUI.prototype.detatch = function(component) {};
+    ComponentUI.prototype.detatch = function(component) {
+      var componentIndex;
+      componentIndex = this._children.indexOf(component);
+      if (componentIndex === -1) {
+        return;
+      }
+      return this._children.splice(componentIndex, 1);
+    };
 
     ComponentUI.prototype.mount = function() {};
 
@@ -4891,25 +4925,25 @@
     };
 
     ComponentUI.prototype.trigger = function() {
-      var args, callback, eventName, j, len, ref, results;
-      eventName = arguments[0], args = 2 <= arguments.length ? slice.call(arguments, 1) : [];
+      var args, callback, eventName, _i, _len, _ref, _results;
+      eventName = arguments[0], args = 2 <= arguments.length ? __slice.call(arguments, 1) : [];
       if (!this._bindings[eventName]) {
         return;
       }
-      ref = this._bindings[eventName];
-      results = [];
-      for (j = 0, len = ref.length; j < len; j++) {
-        callback = ref[j];
+      _ref = this._bindings[eventName];
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        callback = _ref[_i];
         if (!callback) {
           continue;
         }
-        results.push(callback.call.apply(callback, [this].concat(slice.call(args))));
+        _results.push(callback.call.apply(callback, [this].concat(__slice.call(args))));
       }
-      return results;
+      return _results;
     };
 
     ComponentUI.prototype.unbind = function(eventName, callback) {
-      var i, j, len, ref, results, suspect;
+      var i, suspect, _i, _len, _ref, _results;
       if (!eventName) {
         this._bindings = {};
         return;
@@ -4921,24 +4955,24 @@
       if (!this._bindings[eventName]) {
         return;
       }
-      ref = this._bindings[eventName];
-      results = [];
-      for (i = j = 0, len = ref.length; j < len; i = ++j) {
-        suspect = ref[i];
+      _ref = this._bindings[eventName];
+      _results = [];
+      for (i = _i = 0, _len = _ref.length; _i < _len; i = ++_i) {
+        suspect = _ref[i];
         if (suspect === callback) {
-          results.push(this._bindings[eventName].splice(i, 1));
+          _results.push(this._bindings[eventName].splice(i, 1));
         } else {
-          results.push(void 0);
+          _results.push(void 0);
         }
       }
-      return results;
+      return _results;
     };
 
     ComponentUI.prototype._addDOMEventListeners = function() {};
 
     ComponentUI.prototype._removeDOMEventListeners = function() {};
 
-    ComponentUI.prototype.createDiv = function(classNames, attributes, content) {
+    ComponentUI.createDiv = function(classNames, attributes, content) {
       var domElement, name, value;
       domElement = document.createElement('div');
       if (classNames && classNames.length > 0) {
@@ -4960,8 +4994,8 @@
 
   })();
 
-  ContentTools.WidgetUI = (function(superClass) {
-    extend(WidgetUI, superClass);
+  ContentTools.WidgetUI = (function(_super) {
+    __extends(WidgetUI, _super);
 
     function WidgetUI() {
       return WidgetUI.__super__.constructor.apply(this, arguments);
@@ -4969,8 +5003,15 @@
 
     WidgetUI.prototype.attach = function(component, index) {
       WidgetUI.__super__.attach.call(this, component, index);
-      if (this.isMounted()) {
+      if (!this.isMounted()) {
         return component.mount();
+      }
+    };
+
+    WidgetUI.prototype.detatch = function(component) {
+      WidgetUI.__super__.detatch.call(this, component);
+      if (this.isMounted()) {
+        return component.unmount();
       }
     };
 
@@ -5012,8 +5053,8 @@
 
   })(ContentTools.ComponentUI);
 
-  ContentTools.AnchoredComponentUI = (function(superClass) {
-    extend(AnchoredComponentUI, superClass);
+  ContentTools.AnchoredComponentUI = (function(_super) {
+    __extends(AnchoredComponentUI, _super);
 
     function AnchoredComponentUI() {
       return AnchoredComponentUI.__super__.constructor.apply(this, arguments);
@@ -5031,8 +5072,8 @@
 
   })(ContentTools.ComponentUI);
 
-  ContentTools.FlashUI = (function(superClass) {
-    extend(FlashUI, superClass);
+  ContentTools.FlashUI = (function(_super) {
+    __extends(FlashUI, _super);
 
     function FlashUI(modifier) {
       FlashUI.__super__.constructor.call(this);
@@ -5041,7 +5082,7 @@
 
     FlashUI.prototype.mount = function(modifier) {
       var monitorForHidden;
-      this._domElement = this.createDiv(['ct-flash', 'ct-flash--active', "ct-flash--" + modifier, 'ct-widget', 'ct-widget--active']);
+      this._domElement = this.constructor.createDiv(['ct-flash', 'ct-flash--active', "ct-flash--" + modifier, 'ct-widget', 'ct-widget--active']);
       FlashUI.__super__.mount.call(this, ContentTools.EditorApp.get().domElement());
       monitorForHidden = (function(_this) {
         return function() {
@@ -5063,8 +5104,8 @@
 
   })(ContentTools.AnchoredComponentUI);
 
-  ContentTools.IgnitionUI = (function(superClass) {
-    extend(IgnitionUI, superClass);
+  ContentTools.IgnitionUI = (function(_super) {
+    __extends(IgnitionUI, _super);
 
     function IgnitionUI() {
       IgnitionUI.__super__.constructor.call(this);
@@ -5098,15 +5139,15 @@
 
     IgnitionUI.prototype.mount = function() {
       IgnitionUI.__super__.mount.call(this);
-      this._domElement = this.createDiv(['ct-widget', 'ct-ignition', 'ct-ignition--ready']);
+      this._domElement = this.constructor.createDiv(['ct-widget', 'ct-ignition', 'ct-ignition--ready']);
       this.parent().domElement().appendChild(this._domElement);
-      this._domEdit = this.createDiv(['ct-ignition__button', 'ct-ignition__button--edit']);
+      this._domEdit = this.constructor.createDiv(['ct-ignition__button', 'ct-ignition__button--edit']);
       this._domElement.appendChild(this._domEdit);
-      this._domConfirm = this.createDiv(['ct-ignition__button', 'ct-ignition__button--confirm']);
+      this._domConfirm = this.constructor.createDiv(['ct-ignition__button', 'ct-ignition__button--confirm']);
       this._domElement.appendChild(this._domConfirm);
-      this._domCancel = this.createDiv(['ct-ignition__button', 'ct-ignition__button--cancel']);
+      this._domCancel = this.constructor.createDiv(['ct-ignition__button', 'ct-ignition__button--cancel']);
       this._domElement.appendChild(this._domCancel);
-      this._domBusy = this.createDiv(['ct-ignition__button', 'ct-ignition__button--busy']);
+      this._domBusy = this.constructor.createDiv(['ct-ignition__button', 'ct-ignition__button--busy']);
       this._domElement.appendChild(this._domBusy);
       return this._addDOMEventListeners();
     };
@@ -5149,8 +5190,8 @@
 
   })(ContentTools.WidgetUI);
 
-  ContentTools.InspectorUI = (function(superClass) {
-    extend(InspectorUI, superClass);
+  ContentTools.InspectorUI = (function(_super) {
+    __extends(InspectorUI, _super);
 
     function InspectorUI() {
       InspectorUI.__super__.constructor.call(this);
@@ -5158,9 +5199,9 @@
     }
 
     InspectorUI.prototype.mount = function() {
-      this._domElement = this.createDiv(['ct-widget', 'ct-inspector']);
+      this._domElement = this.constructor.createDiv(['ct-widget', 'ct-inspector']);
       this.parent().domElement().appendChild(this._domElement);
-      this._domTags = this.createDiv(['ct-inspector__tags', 'ct-tags']);
+      this._domTags = this.constructor.createDiv(['ct-inspector__tags', 'ct-tags']);
       this._domElement.appendChild(this._domTags);
       this._addDOMEventListeners();
       this._handleFocusChange = (function(_this) {
@@ -5182,42 +5223,43 @@
     };
 
     InspectorUI.prototype.updateTags = function() {
-      var element, elements, j, l, len, len1, ref, results, tag;
+      var element, elements, tag, _i, _j, _len, _len1, _ref, _results;
       element = ContentEdit.Root.get().focused();
-      ref = this._tagUIs;
-      for (j = 0, len = ref.length; j < len; j++) {
-        tag = ref[j];
+      _ref = this._tagUIs;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        tag = _ref[_i];
         tag.unmount();
       }
+      this._tagUIs = [];
       if (!element) {
         return;
       }
       elements = element.parents();
       elements.reverse();
       elements.push(element);
-      results = [];
-      for (l = 0, len1 = elements.length; l < len1; l++) {
-        element = elements[l];
+      _results = [];
+      for (_j = 0, _len1 = elements.length; _j < _len1; _j++) {
+        element = elements[_j];
         if (ContentTools.INSPECTOR_IGNORED_ELEMENTS.indexOf(element.constructor.name) !== -1) {
           continue;
         }
         tag = new ContentTools.TagUI(element);
         this._tagUIs.push(tag);
-        results.push(tag.mount(this._domTags));
+        _results.push(tag.mount(this._domTags));
       }
-      return results;
+      return _results;
     };
 
     return InspectorUI;
 
   })(ContentTools.WidgetUI);
 
-  ContentTools.TagUI = (function(superClass) {
-    extend(TagUI, superClass);
+  ContentTools.TagUI = (function(_super) {
+    __extends(TagUI, _super);
 
-    function TagUI(element1) {
-      this.element = element1;
-      this._onMouseDown = bind(this._onMouseDown, this);
+    function TagUI(element) {
+      this.element = element;
+      this._onMouseDown = __bind(this._onMouseDown, this);
       TagUI.__super__.constructor.call(this);
     }
 
@@ -5225,7 +5267,7 @@
       if (before == null) {
         before = null;
       }
-      this._domElement = this.createDiv(['ct-tag']);
+      this._domElement = this.constructor.createDiv(['ct-tag']);
       this._domElement.textContent = this.element.tagName();
       return TagUI.__super__.mount.call(this, domParent, before);
     };
@@ -5255,7 +5297,7 @@
       })(this));
       dialog.bind('save', (function(_this) {
         return function(attributes, styles, innerHTML) {
-          var applied, className, classNames, cssClass, element, j, l, len, len1, name, ref, ref1, value;
+          var applied, className, classNames, cssClass, element, name, value, _i, _j, _len, _len1, _ref, _ref1;
           dialog.unbind('save');
           for (name in attributes) {
             value = attributes[name];
@@ -5264,9 +5306,9 @@
                 value = '';
               }
               classNames = {};
-              ref = value.split(' ');
-              for (j = 0, len = ref.length; j < len; j++) {
-                className = ref[j];
+              _ref = value.split(' ');
+              for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+                className = _ref[_i];
                 className = className.trim();
                 if (!className) {
                   continue;
@@ -5276,9 +5318,9 @@
                   _this.element.addCSSClass(className);
                 }
               }
-              ref1 = _this.element.attr('class').split(' ');
-              for (l = 0, len1 = ref1.length; l < len1; l++) {
-                className = ref1[l];
+              _ref1 = _this.element.attr('class').split(' ');
+              for (_j = 0, _len1 = _ref1.length; _j < _len1; _j++) {
+                className = _ref1[_j];
                 className = className.trim();
                 if (classNames[className] === void 0) {
                   _this.element.removeCSSClass(className);
@@ -5330,8 +5372,8 @@
 
   })(ContentTools.AnchoredComponentUI);
 
-  ContentTools.ModalUI = (function(superClass) {
-    extend(ModalUI, superClass);
+  ContentTools.ModalUI = (function(_super) {
+    __extends(ModalUI, _super);
 
     function ModalUI(transparent, allowScrolling) {
       ModalUI.__super__.constructor.call(this);
@@ -5340,7 +5382,7 @@
     }
 
     ModalUI.prototype.mount = function() {
-      this._domElement = this.createDiv(['ct-widget', 'ct-modal']);
+      this._domElement = this.constructor.createDiv(['ct-widget', 'ct-modal']);
       this.parent().domElement().appendChild(this._domElement);
       if (this._transparent) {
         this.addCSSClass('ct-modal--transparent');
@@ -5370,13 +5412,13 @@
 
   })(ContentTools.WidgetUI);
 
-  ContentTools.ToolboxUI = (function(superClass) {
-    extend(ToolboxUI, superClass);
+  ContentTools.ToolboxUI = (function(_super) {
+    __extends(ToolboxUI, _super);
 
     function ToolboxUI(tools) {
-      this._onStopDragging = bind(this._onStopDragging, this);
-      this._onStartDragging = bind(this._onStartDragging, this);
-      this._onDrag = bind(this._onDrag, this);
+      this._onStopDragging = __bind(this._onStopDragging, this);
+      this._onStartDragging = __bind(this._onStartDragging, this);
+      this._onDrag = __bind(this._onDrag, this);
       ToolboxUI.__super__.constructor.call(this);
       this._tools = tools;
       this._dragging = false;
@@ -5404,25 +5446,25 @@
     };
 
     ToolboxUI.prototype.mount = function() {
-      var coord, domToolGroup, i, j, l, len, len1, position, ref, restore, tool, toolGroup, toolName;
-      this._domElement = this.createDiv(['ct-widget', 'ct-toolbox']);
+      var coord, domToolGroup, i, position, restore, tool, toolGroup, toolName, _i, _j, _len, _len1, _ref;
+      this._domElement = this.constructor.createDiv(['ct-widget', 'ct-toolbox']);
       this.parent().domElement().appendChild(this._domElement);
-      this._domGrip = this.createDiv(['ct-toolbox__grip', 'ct-grip']);
+      this._domGrip = this.constructor.createDiv(['ct-toolbox__grip', 'ct-grip']);
       this._domElement.appendChild(this._domGrip);
-      this._domGrip.appendChild(this.createDiv(['ct-grip__bump']));
-      this._domGrip.appendChild(this.createDiv(['ct-grip__bump']));
-      this._domGrip.appendChild(this.createDiv(['ct-grip__bump']));
-      ref = this._tools;
-      for (i = j = 0, len = ref.length; j < len; i = ++j) {
-        toolGroup = ref[i];
-        domToolGroup = this.createDiv(['ct-tool-group']);
+      this._domGrip.appendChild(this.constructor.createDiv(['ct-grip__bump']));
+      this._domGrip.appendChild(this.constructor.createDiv(['ct-grip__bump']));
+      this._domGrip.appendChild(this.constructor.createDiv(['ct-grip__bump']));
+      _ref = this._tools;
+      for (i = _i = 0, _len = _ref.length; _i < _len; i = ++_i) {
+        toolGroup = _ref[i];
+        domToolGroup = this.constructor.createDiv(['ct-tool-group']);
         this._domElement.appendChild(domToolGroup);
-        for (l = 0, len1 = toolGroup.length; l < len1; l++) {
-          toolName = toolGroup[l];
+        for (_j = 0, _len1 = toolGroup.length; _j < _len1; _j++) {
+          toolName = toolGroup[_j];
           tool = ContentTools.ToolShelf.fetch(toolName);
           this._toolUIs[toolName] = new ContentTools.ToolUI(tool);
           this._toolUIs[toolName].mount(domToolGroup);
-          this._toolUIs[toolName].disable();
+          this._toolUIs[toolName].disabled(true);
           this._toolUIs[toolName].bind('apply', (function(_this) {
             return function() {
               return _this.updateTools();
@@ -5433,36 +5475,36 @@
       restore = window.localStorage.getItem('ct-toolbox-position');
       if (restore && /^\d+,\d+$/.test(restore)) {
         position = (function() {
-          var len2, n, ref1, results;
-          ref1 = restore.split(',');
-          results = [];
-          for (n = 0, len2 = ref1.length; n < len2; n++) {
-            coord = ref1[n];
-            results.push(parseInt(coord));
+          var _k, _len2, _ref1, _results;
+          _ref1 = restore.split(',');
+          _results = [];
+          for (_k = 0, _len2 = _ref1.length; _k < _len2; _k++) {
+            coord = _ref1[_k];
+            _results.push(parseInt(coord));
           }
-          return results;
+          return _results;
         })();
-        this._domElement.style.left = position[0] + "px";
-        this._domElement.style.top = position[1] + "px";
+        this._domElement.style.left = "" + position[0] + "px";
+        this._domElement.style.top = "" + position[1] + "px";
         this._contain();
       }
       return this._addDOMEventListeners();
     };
 
     ToolboxUI.prototype.updateTools = function() {
-      var element, name, ref, results, selection, toolUI;
+      var element, name, selection, toolUI, _ref, _results;
       element = ContentEdit.Root.get().focused();
       selection = null;
       if (element && element.selection) {
         selection = element.selection();
       }
-      ref = this._toolUIs;
-      results = [];
-      for (name in ref) {
-        toolUI = ref[name];
-        results.push(toolUI.update(element, selection));
+      _ref = this._toolUIs;
+      _results = [];
+      for (name in _ref) {
+        toolUI = _ref[name];
+        _results.push(toolUI.update(element, selection));
       }
-      return results;
+      return _results;
     };
 
     ToolboxUI.prototype.unmount = function() {
@@ -5487,7 +5529,7 @@
       window.addEventListener('resize', this._handleResize);
       this._updateTools = (function(_this) {
         return function() {
-          var app, element, name, ref, results, selection, toolUI, update;
+          var app, element, name, selection, toolUI, update, _ref, _results;
           app = ContentTools.EditorApp.get();
           update = false;
           element = ContentEdit.Root.get().focused();
@@ -5510,13 +5552,13 @@
           }
           _this._lastUpdateElement = element;
           _this._lastUpdateSelection = selection;
-          ref = _this._toolUIs;
-          results = [];
-          for (name in ref) {
-            toolUI = ref[name];
-            results.push(toolUI.update(element, selection));
+          _ref = _this._toolUIs;
+          _results = [];
+          for (name in _ref) {
+            toolUI = _ref[name];
+            _results.push(toolUI.update(element, selection));
           }
-          return results;
+          return _results;
         };
       })(this);
       this._updateToolsTimeout = setInterval(this._updateTools, 100);
@@ -5577,10 +5619,10 @@
       }
       rect = this._domElement.getBoundingClientRect();
       if (rect.left + rect.width > window.innerWidth) {
-        this._domElement.style.left = (window.innerWidth - rect.width) + "px";
+        this._domElement.style.left = "" + (window.innerWidth - rect.width) + "px";
       }
       if (rect.top + rect.height > window.innerHeight) {
-        this._domElement.style.top = (window.innerHeight - rect.height) + "px";
+        this._domElement.style.top = "" + (window.innerHeight - rect.height) + "px";
       }
       if (rect.left < 0) {
         this._domElement.style.left = '0px';
@@ -5589,7 +5631,7 @@
         this._domElement.style.top = '0px';
       }
       rect = this._domElement.getBoundingClientRect();
-      return window.localStorage.setItem('ct-toolbox-position', rect.left + "," + rect.top);
+      return window.localStorage.setItem('ct-toolbox-position', "" + rect.left + "," + rect.top);
     };
 
     ToolboxUI.prototype._removeDOMEventListeners = function() {
@@ -5604,8 +5646,8 @@
 
     ToolboxUI.prototype._onDrag = function(ev) {
       ContentSelect.Range.unselectAll();
-      this._domElement.style.left = (ev.clientX - this._draggingOffset.x) + "px";
-      return this._domElement.style.top = (ev.clientY - this._draggingOffset.y) + "px";
+      this._domElement.style.left = "" + (ev.clientX - this._draggingOffset.x) + "px";
+      return this._domElement.style.top = "" + (ev.clientY - this._draggingOffset.y) + "px";
     };
 
     ToolboxUI.prototype._onStartDragging = function(ev) {
@@ -5643,34 +5685,22 @@
 
   })(ContentTools.WidgetUI);
 
-  ContentTools.ToolUI = (function(superClass) {
-    extend(ToolUI, superClass);
+  ContentTools.ToolUI = (function(_super) {
+    __extends(ToolUI, _super);
 
     function ToolUI(tool) {
-      this._onMouseUp = bind(this._onMouseUp, this);
-      this._onMouseLeave = bind(this._onMouseLeave, this);
-      this._onMouseDown = bind(this._onMouseDown, this);
-      this._addDOMEventListeners = bind(this._addDOMEventListeners, this);
+      this._onMouseUp = __bind(this._onMouseUp, this);
+      this._onMouseLeave = __bind(this._onMouseLeave, this);
+      this._onMouseDown = __bind(this._onMouseDown, this);
+      this._addDOMEventListeners = __bind(this._addDOMEventListeners, this);
       ToolUI.__super__.constructor.call(this);
       this.tool = tool;
       this._mouseDown = false;
       this._disabled = false;
     }
 
-    ToolUI.prototype.disabled = function() {
-      return this._disabled;
-    };
-
-    ToolUI.prototype.apply = function() {
-      var callback, element, selection;
-      element = ContentEdit.Root.get().focused();
-      if (!(element && element.isMounted())) {
-        return;
-      }
-      selection = null;
-      if (element.selection) {
-        selection = element.selection();
-      }
+    ToolUI.prototype.apply = function(element, selection) {
+      var callback;
       if (!this.tool.canApply(element, selection)) {
         return;
       }
@@ -5684,42 +5714,41 @@
       return this.tool.apply(element, selection, callback);
     };
 
-    ToolUI.prototype.disable = function() {
-      if (this._disabled) {
+    ToolUI.prototype.disabled = function(disabledState) {
+      if (disabledState === void 0) {
+        return this._disabled;
+      }
+      if (this._disabled === disabledState) {
         return;
       }
-      this._disabled = true;
-      this._mouseDown = false;
-      this.addCSSClass('ct-tool--disabled');
-      return this.removeCSSClass('ct-tool--applied');
-    };
-
-    ToolUI.prototype.enable = function() {
-      if (!this._disabled) {
-        return;
+      this._disabled = disabledState;
+      if (disabledState) {
+        this._mouseDown = false;
+        this.addCSSClass('ct-tool--disabled');
+        return this.removeCSSClass('ct-tool--applied');
+      } else {
+        return this.removeCSSClass('ct-tool--disabled');
       }
-      this._disabled = false;
-      return this.removeCSSClass('ct-tool--disabled');
     };
 
     ToolUI.prototype.mount = function(domParent, before) {
       if (before == null) {
         before = null;
       }
-      this._domElement = this.createDiv(['ct-tool', "ct-tool--" + this.tool.icon]);
+      this._domElement = this.constructor.createDiv(['ct-tool', "ct-tool--" + this.tool.icon]);
       this._domElement.setAttribute('data-tooltip', ContentEdit._(this.tool.label));
       return ToolUI.__super__.mount.call(this, domParent, before);
     };
 
     ToolUI.prototype.update = function(element, selection) {
       if (!(element && element.isMounted())) {
-        this.disable();
+        this.disabled(true);
         return;
       }
       if (this.tool.canApply(element, selection)) {
-        this.enable();
+        this.disabled(false);
       } else {
-        this.disable();
+        this.disabled(true);
         return;
       }
       if (this.tool.isApplied(element, selection)) {
@@ -5750,8 +5779,17 @@
     };
 
     ToolUI.prototype._onMouseUp = function() {
+      var element, selection;
       if (this._mouseDown) {
-        this.apply();
+        element = ContentEdit.Root.get().focused();
+        if (!(element && element.isMounted())) {
+          return;
+        }
+        selection = null;
+        if (element.selection) {
+          selection = element.selection();
+        }
+        this.apply(element, selection);
       }
       this._mouseDown = false;
       return this.removeCSSClass('ct-tool--down');
@@ -5761,8 +5799,8 @@
 
   })(ContentTools.AnchoredComponentUI);
 
-  ContentTools.AnchoredDialogUI = (function(superClass) {
-    extend(AnchoredDialogUI, superClass);
+  ContentTools.AnchoredDialogUI = (function(_super) {
+    __extends(AnchoredDialogUI, _super);
 
     function AnchoredDialogUI() {
       AnchoredDialogUI.__super__.constructor.call(this);
@@ -5770,10 +5808,10 @@
     }
 
     AnchoredDialogUI.prototype.mount = function() {
-      this._domElement = this.createDiv(['ct-widget', 'ct-anchored-dialog']);
+      this._domElement = this.constructor.createDiv(['ct-widget', 'ct-anchored-dialog']);
       this.parent().domElement().appendChild(this._domElement);
-      this._domElement.style.top = this._position[1] + "px";
-      return this._domElement.style.left = this._position[0] + "px";
+      this._domElement.style.top = "" + this._position[1] + "px";
+      return this._domElement.style.left = "" + this._position[0] + "px";
     };
 
     AnchoredDialogUI.prototype.position = function(newPosition) {
@@ -5782,8 +5820,8 @@
       }
       this._position = newPosition.slice();
       if (this.isMounted()) {
-        this._domElement.style.top = this._position[1] + "px";
-        return this._domElement.style.left = this._position[10] + "px";
+        this._domElement.style.top = "" + this._position[1] + "px";
+        return this._domElement.style.left = "" + this._position[0] + "px";
       }
     };
 
@@ -5791,8 +5829,8 @@
 
   })(ContentTools.WidgetUI);
 
-  ContentTools.DialogUI = (function(superClass) {
-    extend(DialogUI, superClass);
+  ContentTools.DialogUI = (function(_super) {
+    __extends(DialogUI, _super);
 
     function DialogUI(caption) {
       if (caption == null) {
@@ -5835,22 +5873,22 @@
       if (this._busy) {
         dialogCSSClasses.push('ct-dialog--busy');
       }
-      this._domElement = this.createDiv(dialogCSSClasses);
+      this._domElement = this.constructor.createDiv(dialogCSSClasses);
       this.parent().domElement().appendChild(this._domElement);
-      domHeader = this.createDiv(['ct-dialog__header']);
+      domHeader = this.constructor.createDiv(['ct-dialog__header']);
       this._domElement.appendChild(domHeader);
-      this._domCaption = this.createDiv(['ct-dialog__caption']);
+      this._domCaption = this.constructor.createDiv(['ct-dialog__caption']);
       domHeader.appendChild(this._domCaption);
       this.caption(this._caption);
-      this._domClose = this.createDiv(['ct-dialog__close']);
+      this._domClose = this.constructor.createDiv(['ct-dialog__close']);
       domHeader.appendChild(this._domClose);
-      domBody = this.createDiv(['ct-dialog__body']);
+      domBody = this.constructor.createDiv(['ct-dialog__body']);
       this._domElement.appendChild(domBody);
-      this._domView = this.createDiv(['ct-dialog__view']);
+      this._domView = this.constructor.createDiv(['ct-dialog__view']);
       domBody.appendChild(this._domView);
-      this._domControls = this.createDiv(['ct-dialog__controls']);
+      this._domControls = this.constructor.createDiv(['ct-dialog__controls']);
       domBody.appendChild(this._domControls);
-      this._domBusy = this.createDiv(['ct-dialog__busy']);
+      this._domBusy = this.constructor.createDiv(['ct-dialog__busy']);
       return this._domElement.appendChild(this._domBusy);
     };
 
@@ -5894,8 +5932,8 @@
 
   })(ContentTools.WidgetUI);
 
-  ContentTools.ImageDialog = (function(superClass) {
-    extend(ImageDialog, superClass);
+  ContentTools.ImageDialog = (function(_super) {
+    __extends(ImageDialog, _super);
 
     function ImageDialog() {
       ImageDialog.__super__.constructor.call(this, 'Insert image');
@@ -5941,24 +5979,24 @@
       ContentEdit.addCSSClass(this._domElement, 'ct-image-dialog');
       ContentEdit.addCSSClass(this._domElement, 'ct-image-dialog--empty');
       ContentEdit.addCSSClass(this._domView, 'ct-image-dialog__view');
-      domTools = this.createDiv(['ct-control-group', 'ct-control-group--left']);
+      domTools = this.constructor.createDiv(['ct-control-group', 'ct-control-group--left']);
       this._domControls.appendChild(domTools);
-      this._domRotateCCW = this.createDiv(['ct-control', 'ct-control--icon', 'ct-control--rotate-ccw']);
+      this._domRotateCCW = this.constructor.createDiv(['ct-control', 'ct-control--icon', 'ct-control--rotate-ccw']);
       this._domRotateCCW.setAttribute('data-tooltip', ContentEdit._('Rotate') + ' -90°');
       domTools.appendChild(this._domRotateCCW);
-      this._domRotateCW = this.createDiv(['ct-control', 'ct-control--icon', 'ct-control--rotate-cw']);
+      this._domRotateCW = this.constructor.createDiv(['ct-control', 'ct-control--icon', 'ct-control--rotate-cw']);
       this._domRotateCW.setAttribute('data-tooltip', ContentEdit._('Rotate') + ' 90°');
       domTools.appendChild(this._domRotateCW);
-      this._domCrop = this.createDiv(['ct-control', 'ct-control--icon', 'ct-control--crop']);
+      this._domCrop = this.constructor.createDiv(['ct-control', 'ct-control--icon', 'ct-control--crop']);
       this._domCrop.setAttribute('data-tooltip', ContentEdit._('Crop marks'));
       domTools.appendChild(this._domCrop);
-      domProgressBar = this.createDiv(['ct-progress-bar']);
+      domProgressBar = this.constructor.createDiv(['ct-progress-bar']);
       domTools.appendChild(domProgressBar);
-      this._domProgress = this.createDiv(['ct-progress-bar__progress']);
+      this._domProgress = this.constructor.createDiv(['ct-progress-bar__progress']);
       domProgressBar.appendChild(this._domProgress);
-      domActions = this.createDiv(['ct-control-group', 'ct-control-group--right']);
+      domActions = this.constructor.createDiv(['ct-control-group', 'ct-control-group--right']);
       this._domControls.appendChild(domActions);
-      this._domUpload = this.createDiv(['ct-control', 'ct-control--text', 'ct-control--upload']);
+      this._domUpload = this.constructor.createDiv(['ct-control', 'ct-control--text', 'ct-control--upload']);
       this._domUpload.textContent = ContentEdit._('Upload');
       domActions.appendChild(this._domUpload);
       this._domInput = document.createElement('input');
@@ -5967,13 +6005,13 @@
       this._domInput.setAttribute('type', 'file');
       this._domInput.setAttribute('accept', 'image/*');
       this._domUpload.appendChild(this._domInput);
-      this._domInsert = this.createDiv(['ct-control', 'ct-control--text', 'ct-control--insert']);
+      this._domInsert = this.constructor.createDiv(['ct-control', 'ct-control--text', 'ct-control--insert']);
       this._domInsert.textContent = ContentEdit._('Insert');
       domActions.appendChild(this._domInsert);
-      this._domCancelUpload = this.createDiv(['ct-control', 'ct-control--text', 'ct-control--cancel']);
+      this._domCancelUpload = this.constructor.createDiv(['ct-control', 'ct-control--text', 'ct-control--cancel']);
       this._domCancelUpload.textContent = ContentEdit._('Cancel');
       domActions.appendChild(this._domCancelUpload);
-      this._domClear = this.createDiv(['ct-control', 'ct-control--text', 'ct-control--clear']);
+      this._domClear = this.constructor.createDiv(['ct-control', 'ct-control--text', 'ct-control--clear']);
       this._domClear.textContent = ContentEdit._('Clear');
       domActions.appendChild(this._domClear);
       this._addDOMEventListeners();
@@ -5984,7 +6022,7 @@
       this._imageURL = imageURL;
       this._imageSize = imageSize;
       if (!this._domImage) {
-        this._domImage = this.createDiv(['ct-image-dialog__image']);
+        this._domImage = this.constructor.createDiv(['ct-image-dialog__image']);
         this._domView.appendChild(this._domImage);
       }
       this._domImage.style['background-image'] = "url(" + imageURL + ")";
@@ -5999,7 +6037,7 @@
       if (!this.isMounted()) {
         return;
       }
-      return this._domProgress.style.width = this._progress + "%";
+      return this._domProgress.style.width = "" + this._progress + "%";
     };
 
     ImageDialog.prototype.removeCropMarks = function() {
@@ -6103,8 +6141,8 @@
 
   })(ContentTools.DialogUI);
 
-  CropMarksUI = (function(superClass) {
-    extend(CropMarksUI, superClass);
+  CropMarksUI = (function(_super) {
+    __extends(CropMarksUI, _super);
 
     function CropMarksUI(imageSize) {
       CropMarksUI.__super__.constructor.call(this);
@@ -6118,13 +6156,13 @@
       if (before == null) {
         before = null;
       }
-      this._domElement = this.createDiv(['ct-crop-marks']);
-      this._domClipper = this.createDiv(['ct-crop-marks__clipper']);
+      this._domElement = this.constructor.createDiv(['ct-crop-marks']);
+      this._domClipper = this.constructor.createDiv(['ct-crop-marks__clipper']);
       this._domElement.appendChild(this._domClipper);
-      this._domRulers = [this.createDiv(['ct-crop-marks__ruler', 'ct-crop-marks__ruler--top-left']), this.createDiv(['ct-crop-marks__ruler', 'ct-crop-marks__ruler--bottom-right'])];
+      this._domRulers = [this.constructor.createDiv(['ct-crop-marks__ruler', 'ct-crop-marks__ruler--top-left']), this.constructor.createDiv(['ct-crop-marks__ruler', 'ct-crop-marks__ruler--bottom-right'])];
       this._domClipper.appendChild(this._domRulers[0]);
       this._domClipper.appendChild(this._domRulers[1]);
-      this._domHandles = [this.createDiv(['ct-crop-marks__handle', 'ct-crop-marks__handle--top-left']), this.createDiv(['ct-crop-marks__handle', 'ct-crop-marks__handle--bottom-right'])];
+      this._domHandles = [this.constructor.createDiv(['ct-crop-marks__handle', 'ct-crop-marks__handle--top-left']), this.constructor.createDiv(['ct-crop-marks__handle', 'ct-crop-marks__handle--bottom-right'])];
       this._domElement.appendChild(this._domHandles[0]);
       this._domElement.appendChild(this._domHandles[1]);
       CropMarksUI.__super__.mount.call(this, domParent, before);
@@ -6182,10 +6220,10 @@
       }
       offsetTop = Math.min(Math.max(top, offsetTop), height);
       offsetLeft = Math.min(Math.max(left, offsetLeft), width);
-      this._domHandles[this._dragging].style.top = offsetTop + "px";
-      this._domHandles[this._dragging].style.left = offsetLeft + "px";
-      this._domRulers[this._dragging].style.top = offsetTop + "px";
-      return this._domRulers[this._dragging].style.left = offsetLeft + "px";
+      this._domHandles[this._dragging].style.top = "" + offsetTop + "px";
+      this._domHandles[this._dragging].style.left = "" + offsetLeft + "px";
+      this._domRulers[this._dragging].style.top = "" + offsetTop + "px";
+      return this._domRulers[this._dragging].style.left = "" + offsetLeft + "px";
     };
 
     CropMarksUI.prototype._fit = function(domParent) {
@@ -6198,18 +6236,18 @@
       height = ratio * this._imageSize[1];
       left = (rect.width - width) / 2;
       top = (rect.height - height) / 2;
-      this._domElement.style.width = width + "px";
-      this._domElement.style.height = height + "px";
-      this._domElement.style.top = top + "px";
-      this._domElement.style.left = left + "px";
+      this._domElement.style.width = "" + width + "px";
+      this._domElement.style.height = "" + height + "px";
+      this._domElement.style.top = "" + top + "px";
+      this._domElement.style.left = "" + left + "px";
       this._domHandles[0].style.top = '0px';
       this._domHandles[0].style.left = '0px';
-      this._domHandles[1].style.top = height + "px";
-      this._domHandles[1].style.left = width + "px";
+      this._domHandles[1].style.top = "" + height + "px";
+      this._domHandles[1].style.left = "" + width + "px";
       this._domRulers[0].style.top = '0px';
       this._domRulers[0].style.left = '0px';
-      this._domRulers[1].style.top = height + "px";
-      this._domRulers[1].style.left = width + "px";
+      this._domRulers[1].style.top = "" + height + "px";
+      this._domRulers[1].style.left = "" + width + "px";
       return this._bounds = [width, height];
     };
 
@@ -6243,8 +6281,8 @@
 
   })(ContentTools.AnchoredComponentUI);
 
-  ContentTools.LinkDialog = (function(superClass) {
-    extend(LinkDialog, superClass);
+  ContentTools.LinkDialog = (function(_super) {
+    __extends(LinkDialog, _super);
 
     function LinkDialog(initialValue) {
       if (initialValue == null) {
@@ -6263,7 +6301,7 @@
       this._domInput.setAttribute('type', 'text');
       this._domInput.setAttribute('value', this._initialValue);
       this._domElement.appendChild(this._domInput);
-      this._domButton = this.createDiv(['ct-anchored-dialog__button']);
+      this._domButton = this.constructor.createDiv(['ct-anchored-dialog__button']);
       this._domElement.appendChild(this._domButton);
       return this._addDOMEventListeners();
     };
@@ -6312,18 +6350,18 @@
 
   })(ContentTools.AnchoredDialogUI);
 
-  ContentTools.PropertiesDialog = (function(superClass) {
-    extend(PropertiesDialog, superClass);
+  ContentTools.PropertiesDialog = (function(_super) {
+    __extends(PropertiesDialog, _super);
 
-    function PropertiesDialog(element1) {
-      var ref;
-      this.element = element1;
+    function PropertiesDialog(element) {
+      var _ref;
+      this.element = element;
       PropertiesDialog.__super__.constructor.call(this, 'Properties');
       this._attributeUIs = [];
       this._focusedAttributeUI = null;
       this._styleUIs = [];
-      this._supportsCoding = element.content;
-      if ((ref = element.constructor.name) === 'ListItem' || ref === 'TableCell') {
+      this._supportsCoding = this.element.content;
+      if ((_ref = this.element.constructor.name) === 'ListItem' || _ref === 'TableCell') {
         this._supportsCoding = true;
       }
     }
@@ -6337,12 +6375,12 @@
     };
 
     PropertiesDialog.prototype.changedAttributes = function() {
-      var attributeUI, attributes, changedAttributes, j, len, name, ref, ref1, restricted, value;
+      var attributeUI, attributes, changedAttributes, name, restricted, value, _i, _len, _ref, _ref1;
       attributes = {};
       changedAttributes = {};
-      ref = this._attributeUIs;
-      for (j = 0, len = ref.length; j < len; j++) {
-        attributeUI = ref[j];
+      _ref = this._attributeUIs;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        attributeUI = _ref[_i];
         name = attributeUI.name();
         value = attributeUI.value();
         if (name === '') {
@@ -6354,9 +6392,9 @@
         }
       }
       restricted = ContentTools.RESTRICTED_ATTRIBUTES[this.element.tagName()];
-      ref1 = this.element.attributes();
-      for (name in ref1) {
-        value = ref1[name];
+      _ref1 = this.element.attributes();
+      for (name in _ref1) {
+        value = _ref1[name];
         if (restricted && restricted.indexOf(name.toLowerCase()) !== -1) {
           continue;
         }
@@ -6368,11 +6406,11 @@
     };
 
     PropertiesDialog.prototype.changedStyles = function() {
-      var cssClass, j, len, ref, styleUI, styles;
+      var cssClass, styleUI, styles, _i, _len, _ref;
       styles = {};
-      ref = this._styleUIs;
-      for (j = 0, len = ref.length; j < len; j++) {
-        styleUI = ref[j];
+      _ref = this._styleUIs;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        styleUI = _ref[_i];
         cssClass = styleUI.style.cssClass();
         if (this.element.hasCSSClass(cssClass) !== styleUI.applied()) {
           styles[cssClass] = styleUI.applied();
@@ -6392,21 +6430,21 @@
     };
 
     PropertiesDialog.prototype.mount = function() {
-      var attributeNames, attributes, domActions, domTabs, j, l, lastTab, len, len1, name, ref, restricted, style, styleUI, value;
+      var attributeNames, attributes, domActions, domTabs, lastTab, name, restricted, style, styleUI, value, _i, _j, _len, _len1, _ref;
       PropertiesDialog.__super__.mount.call(this);
       ContentEdit.addCSSClass(this._domElement, 'ct-properties-dialog');
       ContentEdit.addCSSClass(this._domView, 'ct-properties-dialog__view');
-      this._domStyles = this.createDiv(['ct-properties-dialog__styles']);
+      this._domStyles = this.constructor.createDiv(['ct-properties-dialog__styles']);
       this._domStyles.setAttribute('data-ct-empty', ContentEdit._('No styles available for this tag'));
       this._domView.appendChild(this._domStyles);
-      ref = ContentTools.StylePalette.styles(this.element.tagName());
-      for (j = 0, len = ref.length; j < len; j++) {
-        style = ref[j];
+      _ref = ContentTools.StylePalette.styles(this.element.tagName());
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        style = _ref[_i];
         styleUI = new StyleUI(style, this.element.hasCSSClass(style.cssClass()));
         this._styleUIs.push(styleUI);
         styleUI.mount(this._domStyles);
       }
-      this._domAttributes = this.createDiv(['ct-properties-dialog__attributes']);
+      this._domAttributes = this.constructor.createDiv(['ct-properties-dialog__attributes']);
       this._domView.appendChild(this._domAttributes);
       restricted = ContentTools.RESTRICTED_ATTRIBUTES[this.element.tagName()];
       attributes = this.element.attributes();
@@ -6419,39 +6457,39 @@
         attributeNames.push(name);
       }
       attributeNames.sort();
-      for (l = 0, len1 = attributeNames.length; l < len1; l++) {
-        name = attributeNames[l];
+      for (_j = 0, _len1 = attributeNames.length; _j < _len1; _j++) {
+        name = attributeNames[_j];
         value = attributes[name];
         this._addAttributeUI(name, value);
       }
       this._addAttributeUI('', '');
-      this._domCode = this.createDiv(['ct-properties-dialog__code']);
+      this._domCode = this.constructor.createDiv(['ct-properties-dialog__code']);
       this._domView.appendChild(this._domCode);
       this._domInnerHTML = document.createElement('textarea');
       this._domInnerHTML.setAttribute('class', 'ct-properties-dialog__inner-html');
       this._domInnerHTML.setAttribute('name', 'code');
       this._domInnerHTML.value = this.getElementInnerHTML();
       this._domCode.appendChild(this._domInnerHTML);
-      domTabs = this.createDiv(['ct-control-group', 'ct-control-group--left']);
+      domTabs = this.constructor.createDiv(['ct-control-group', 'ct-control-group--left']);
       this._domControls.appendChild(domTabs);
-      this._domStylesTab = this.createDiv(['ct-control', 'ct-control--icon', 'ct-control--styles']);
+      this._domStylesTab = this.constructor.createDiv(['ct-control', 'ct-control--icon', 'ct-control--styles']);
       this._domStylesTab.setAttribute('data-tooltip', ContentEdit._('Styles'));
       domTabs.appendChild(this._domStylesTab);
-      this._domAttributesTab = this.createDiv(['ct-control', 'ct-control--icon', 'ct-control--attributes']);
+      this._domAttributesTab = this.constructor.createDiv(['ct-control', 'ct-control--icon', 'ct-control--attributes']);
       this._domAttributesTab.setAttribute('data-tooltip', ContentEdit._('Attributes'));
       domTabs.appendChild(this._domAttributesTab);
-      this._domCodeTab = this.createDiv(['ct-control', 'ct-control--icon', 'ct-control--code']);
+      this._domCodeTab = this.constructor.createDiv(['ct-control', 'ct-control--icon', 'ct-control--code']);
       this._domCodeTab.setAttribute('data-tooltip', ContentEdit._('Code'));
       domTabs.appendChild(this._domCodeTab);
       if (!this._supportsCoding) {
         ContentEdit.addCSSClass(this._domCodeTab, 'ct-control--muted');
       }
-      this._domRemoveAttribute = this.createDiv(['ct-control', 'ct-control--icon', 'ct-control--remove', 'ct-control--muted']);
+      this._domRemoveAttribute = this.constructor.createDiv(['ct-control', 'ct-control--icon', 'ct-control--remove', 'ct-control--muted']);
       this._domRemoveAttribute.setAttribute('data-tooltip', ContentEdit._('Remove'));
       domTabs.appendChild(this._domRemoveAttribute);
-      domActions = this.createDiv(['ct-control-group', 'ct-control-group--right']);
+      domActions = this.constructor.createDiv(['ct-control-group', 'ct-control-group--right']);
       this._domControls.appendChild(domActions);
-      this._domApply = this.createDiv(['ct-control', 'ct-control--text', 'ct-control--apply']);
+      this._domApply = this.constructor.createDiv(['ct-control', 'ct-control--text', 'ct-control--apply']);
       this._domApply.textContent = ContentEdit._('Apply');
       domActions.appendChild(this._domApply);
       lastTab = window.localStorage.getItem('ct-properties-dialog-tab');
@@ -6504,7 +6542,7 @@
         return ContentEdit.removeCSSClass(dialog._domRemoveAttribute, 'ct-control--muted');
       });
       attributeUI.bind('namechange', function() {
-        var element, j, len, otherAttributeUI, ref, restricted, valid;
+        var element, otherAttributeUI, restricted, valid, _i, _len, _ref;
         element = dialog.element;
         name = this.name().toLowerCase();
         restricted = ContentTools.RESTRICTED_ATTRIBUTES[element.tagName()];
@@ -6512,9 +6550,9 @@
         if (restricted && restricted.indexOf(name) !== -1) {
           valid = false;
         }
-        ref = dialog._attributeUIs;
-        for (j = 0, len = ref.length; j < len; j++) {
-          otherAttributeUI = ref[j];
+        _ref = dialog._attributeUIs;
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          otherAttributeUI = _ref[_i];
           if (name === '') {
             continue;
           }
@@ -6542,10 +6580,10 @@
       PropertiesDialog.__super__._addDOMEventListeners.call(this);
       selectTab = (function(_this) {
         return function(selected) {
-          var j, len, selectedCap, tab, tabCap, tabs;
+          var selectedCap, tab, tabCap, tabs, _i, _len;
           tabs = ['attributes', 'code', 'styles'];
-          for (j = 0, len = tabs.length; j < len; j++) {
-            tab = tabs[j];
+          for (_i = 0, _len = tabs.length; _i < _len; _i++) {
+            tab = tabs[_i];
             if (tab === selected) {
               continue;
             }
@@ -6620,11 +6658,11 @@
 
   })(ContentTools.DialogUI);
 
-  StyleUI = (function(superClass) {
-    extend(StyleUI, superClass);
+  StyleUI = (function(_super) {
+    __extends(StyleUI, _super);
 
-    function StyleUI(style1, applied) {
-      this.style = style1;
+    function StyleUI(style, applied) {
+      this.style = style;
       StyleUI.__super__.constructor.call(this);
       this._applied = applied;
     }
@@ -6649,14 +6687,14 @@
       if (before == null) {
         before = null;
       }
-      this._domElement = this.createDiv(['ct-section']);
+      this._domElement = this.constructor.createDiv(['ct-section']);
       if (this._applied) {
         ContentEdit.addCSSClass(this._domElement, 'ct-section--applied');
       }
-      label = this.createDiv(['ct-section__label']);
+      label = this.constructor.createDiv(['ct-section__label']);
       label.textContent = this.style.name();
       this._domElement.appendChild(label);
-      this._domElement.appendChild(this.createDiv(['ct-section__switch']));
+      this._domElement.appendChild(this.constructor.createDiv(['ct-section__switch']));
       return StyleUI.__super__.mount.call(this, domParent, before);
     };
 
@@ -6679,8 +6717,8 @@
 
   })(ContentTools.AnchoredComponentUI);
 
-  AttributeUI = (function(superClass) {
-    extend(AttributeUI, superClass);
+  AttributeUI = (function(_super) {
+    __extends(AttributeUI, _super);
 
     function AttributeUI(name, value) {
       AttributeUI.__super__.constructor.call(this);
@@ -6700,7 +6738,7 @@
       if (before == null) {
         before = null;
       }
-      this._domElement = this.createDiv(['ct-attribute']);
+      this._domElement = this.constructor.createDiv(['ct-attribute']);
       this._domName = document.createElement('input');
       this._domName.setAttribute('class', 'ct-attribute__name');
       this._domName.setAttribute('name', 'name');
@@ -6790,11 +6828,11 @@
 
   })(ContentTools.AnchoredComponentUI);
 
-  ContentTools.TableDialog = (function(superClass) {
-    extend(TableDialog, superClass);
+  ContentTools.TableDialog = (function(_super) {
+    __extends(TableDialog, _super);
 
-    function TableDialog(table1) {
-      this.table = table1;
+    function TableDialog(table) {
+      this.table = table;
       if (this.table) {
         TableDialog.__super__.constructor.call(this, 'Update table');
       } else {
@@ -6823,16 +6861,16 @@
       if (cfg.head) {
         headCSSClasses.push('ct-section--applied');
       }
-      this._domHeadSection = this.createDiv(headCSSClasses);
+      this._domHeadSection = this.constructor.createDiv(headCSSClasses);
       this._domView.appendChild(this._domHeadSection);
-      domHeadLabel = this.createDiv(['ct-section__label']);
+      domHeadLabel = this.constructor.createDiv(['ct-section__label']);
       domHeadLabel.textContent = ContentEdit._('Table head');
       this._domHeadSection.appendChild(domHeadLabel);
-      this._domHeadSwitch = this.createDiv(['ct-section__switch']);
+      this._domHeadSwitch = this.constructor.createDiv(['ct-section__switch']);
       this._domHeadSection.appendChild(this._domHeadSwitch);
-      this._domBodySection = this.createDiv(['ct-section', 'ct-section--applied', 'ct-section--contains-input']);
+      this._domBodySection = this.constructor.createDiv(['ct-section', 'ct-section--applied', 'ct-section--contains-input']);
       this._domView.appendChild(this._domBodySection);
-      domBodyLabel = this.createDiv(['ct-section__label']);
+      domBodyLabel = this.constructor.createDiv(['ct-section__label']);
       domBodyLabel.textContent = ContentEdit._('Table body (columns)');
       this._domBodySection.appendChild(domBodyLabel);
       this._domBodyInput = document.createElement('input');
@@ -6846,16 +6884,16 @@
       if (cfg.foot) {
         footCSSClasses.push('ct-section--applied');
       }
-      this._domFootSection = this.createDiv(footCSSClasses);
+      this._domFootSection = this.constructor.createDiv(footCSSClasses);
       this._domView.appendChild(this._domFootSection);
-      domFootLabel = this.createDiv(['ct-section__label']);
+      domFootLabel = this.constructor.createDiv(['ct-section__label']);
       domFootLabel.textContent = ContentEdit._('Table foot');
       this._domFootSection.appendChild(domFootLabel);
-      this._domFootSwitch = this.createDiv(['ct-section__switch']);
+      this._domFootSwitch = this.constructor.createDiv(['ct-section__switch']);
       this._domFootSection.appendChild(this._domFootSwitch);
-      domControlGroup = this.createDiv(['ct-control-group', 'ct-control-group--right']);
+      domControlGroup = this.constructor.createDiv(['ct-control-group', 'ct-control-group--right']);
       this._domControls.appendChild(domControlGroup);
-      this._domApply = this.createDiv(['ct-control', 'ct-control--text', 'ct-control--apply']);
+      this._domApply = this.constructor.createDiv(['ct-control', 'ct-control--text', 'ct-control--apply']);
       this._domApply.textContent = 'Apply';
       domControlGroup.appendChild(this._domApply);
       return this._addDOMEventListeners();
@@ -6931,8 +6969,8 @@
 
   })(ContentTools.DialogUI);
 
-  ContentTools.VideoDialog = (function(superClass) {
-    extend(VideoDialog, superClass);
+  ContentTools.VideoDialog = (function(_super) {
+    __extends(VideoDialog, _super);
 
     function VideoDialog() {
       VideoDialog.__super__.constructor.call(this, 'Insert video');
@@ -6950,7 +6988,7 @@
       VideoDialog.__super__.mount.call(this);
       ContentEdit.addCSSClass(this._domElement, 'ct-video-dialog');
       ContentEdit.addCSSClass(this._domView, 'ct-video-dialog__preview');
-      domControlGroup = this.createDiv(['ct-control-group']);
+      domControlGroup = this.constructor.createDiv(['ct-control-group']);
       this._domControls.appendChild(domControlGroup);
       this._domInput = document.createElement('input');
       this._domInput.setAttribute('class', 'ct-video-dialog__input');
@@ -6958,7 +6996,7 @@
       this._domInput.setAttribute('placeholder', ContentEdit._('Paste YouTube or Vimeo URL') + '...');
       this._domInput.setAttribute('type', 'text');
       domControlGroup.appendChild(this._domInput);
-      this._domButton = this.createDiv(['ct-control', 'ct-control--text', 'ct-control--insert', 'ct-control--muted']);
+      this._domButton = this.constructor.createDiv(['ct-control', 'ct-control--text', 'ct-control--insert', 'ct-control--muted']);
       this._domButton.textContent = ContentEdit._('Insert');
       domControlGroup.appendChild(this._domButton);
       return this._addDOMEventListeners();
@@ -7049,8 +7087,8 @@
 
   })(ContentTools.DialogUI);
 
-  _EditorApp = (function(superClass) {
-    extend(_EditorApp, superClass);
+  _EditorApp = (function(_super) {
+    __extends(_EditorApp, _super);
 
     function _EditorApp() {
       _EditorApp.__super__.constructor.call(this);
@@ -7058,6 +7096,8 @@
       this._state = ContentTools.EditorApp.DORMANT;
       this._regions = null;
       this._orderedRegions = null;
+      this._rootLastModified = null;
+      this._regionsLastModified = {};
       this._ignition = null;
       this._inspector = null;
       this._toolbox = null;
@@ -7074,14 +7114,14 @@
     _EditorApp.prototype.orderedRegions = function() {
       var name;
       return (function() {
-        var j, len, ref, results;
-        ref = this._orderedRegions;
-        results = [];
-        for (j = 0, len = ref.length; j < len; j++) {
-          name = ref[j];
-          results.push(this._regions[name]);
+        var _i, _len, _ref, _results;
+        _ref = this._orderedRegions;
+        _results = [];
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          name = _ref[_i];
+          _results.push(this._regions[name]);
         }
-        return results;
+        return _results;
       }).call(this);
     };
 
@@ -7097,12 +7137,16 @@
       return this._ignition.busy(busy);
     };
 
-    _EditorApp.prototype.init = function(query, namingProp) {
+    _EditorApp.prototype.init = function(queryOrDOMElements, namingProp) {
       if (namingProp == null) {
         namingProp = 'id';
       }
       this._namingProp = namingProp;
-      this._domRegions = document.querySelectorAll(query);
+      if (queryOrDOMElements.length > 0 && queryOrDOMElements[0].nodeType === Node.ELEMENT_NODE) {
+        this._domRegions = queryOrDOMElements;
+      } else {
+        this._domRegions = document.querySelectorAll(queryOrDOMElements);
+      }
       if (this._domRegions.length === 0) {
         return;
       }
@@ -7116,6 +7160,11 @@
       })(this));
       this._ignition.bind('stop', (function(_this) {
         return function(save) {
+          var focused;
+          focused = ContentEdit.Root.get().focused();
+          if (focused && focused._syncContent !== void 0) {
+            focused._syncContent();
+          }
           if (save) {
             _this.save();
           } else {
@@ -7147,7 +7196,7 @@
       })(this));
       ContentEdit.Root.get().bind('next-region', (function(_this) {
         return function(region) {
-          var child, element, index, j, len, ref, regions;
+          var child, element, index, regions, _i, _len, _ref;
           regions = _this.orderedRegions();
           index = regions.indexOf(region);
           if (index >= (regions.length - 1)) {
@@ -7155,9 +7204,9 @@
           }
           region = regions[index + 1];
           element = null;
-          ref = region.descendants();
-          for (j = 0, len = ref.length; j < len; j++) {
-            child = ref[j];
+          _ref = region.descendants();
+          for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+            child = _ref[_i];
             if (child.content !== void 0) {
               element = child;
               break;
@@ -7173,7 +7222,7 @@
       })(this));
       return ContentEdit.Root.get().bind('previous-region', (function(_this) {
         return function(region) {
-          var child, descendants, element, index, j, len, length, regions;
+          var child, descendants, element, index, length, regions, _i, _len;
           regions = _this.orderedRegions();
           index = regions.indexOf(region);
           if (index <= 0) {
@@ -7183,8 +7232,8 @@
           element = null;
           descendants = region.descendants();
           descendants.reverse();
-          for (j = 0, len = descendants.length; j < len; j++) {
-            child = descendants[j];
+          for (_i = 0, _len = descendants.length; _i < _len; _i++) {
+            child = descendants[_i];
             if (child.content !== void 0) {
               element = child;
               break;
@@ -7206,28 +7255,28 @@
     };
 
     _EditorApp.prototype.highlightRegions = function(highlight) {
-      var domRegion, j, len, ref, results;
-      ref = this._domRegions;
-      results = [];
-      for (j = 0, len = ref.length; j < len; j++) {
-        domRegion = ref[j];
+      var domRegion, _i, _len, _ref, _results;
+      _ref = this._domRegions;
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        domRegion = _ref[_i];
         if (highlight) {
-          results.push(ContentEdit.addCSSClass(domRegion, 'ct--highlight'));
+          _results.push(ContentEdit.addCSSClass(domRegion, 'ct--highlight'));
         } else {
-          results.push(ContentEdit.removeCSSClass(domRegion, 'ct--highlight'));
+          _results.push(ContentEdit.removeCSSClass(domRegion, 'ct--highlight'));
         }
       }
-      return results;
+      return _results;
     };
 
     _EditorApp.prototype.mount = function() {
-      this._domElement = this.createDiv(['ct-app']);
+      this._domElement = this.constructor.createDiv(['ct-app']);
       document.body.insertBefore(this._domElement, null);
       return this._addDOMEventListeners();
     };
 
     _EditorApp.prototype.paste = function(element, clipboardData) {
-      var className, content, cursor, encodeHTML, i, insertAt, insertIn, insertNode, item, itemText, j, lastItem, len, line, lineLength, lines, selection, tail, tip;
+      var className, content, cursor, encodeHTML, i, insertAt, insertIn, insertNode, item, itemText, lastItem, line, lineLength, lines, selection, tail, tip, _i, _len;
       content = clipboardData.getData('text/plain');
       lines = content.split('\n');
       lines = lines.filter(function(line) {
@@ -7253,7 +7302,7 @@
           insertIn = insertNode.parent();
           insertAt = insertIn.children.indexOf(insertNode) + 1;
         }
-        for (i = j = 0, len = lines.length; j < len; i = ++j) {
+        for (i = _i = 0, _len = lines.length; _i < _len; i = ++_i) {
           line = lines[i];
           line = encodeHTML(line);
           if (className === 'ListItemText') {
@@ -7287,6 +7336,9 @@
     };
 
     _EditorApp.prototype.unmount = function() {
+      if (!this.isMounted()) {
+        return;
+      }
       this._domElement.parentNode.removeChild(this._domElement);
       this._domElement = null;
       this._removeDOMEventListeners();
@@ -7296,7 +7348,9 @@
     };
 
     _EditorApp.prototype.revert = function() {
-      if (ContentEdit.Root.get().lastModified() && !window.confirm(ContentEdit._('Your changes have not been saved, do you really want to lose them?'))) {
+      var confirmMessage;
+      confirmMessage = ContentEdit._('Your changes have not been saved, do you really want to lose them?');
+      if (ContentEdit.Root.get().lastModified() > this._rootLastModified && !window.confirm(confirmMessage)) {
         return false;
       }
       this.revertToSnapshot(this.history.goTo(0), false);
@@ -7304,20 +7358,20 @@
     };
 
     _EditorApp.prototype.revertToSnapshot = function(snapshot, restoreEditable) {
-      var domRegion, i, j, len, name, ref, ref1, region;
+      var domRegion, i, name, region, _i, _len, _ref, _ref1;
       if (restoreEditable == null) {
         restoreEditable = true;
       }
-      ref = this._regions;
-      for (name in ref) {
-        region = ref[name];
+      _ref = this._regions;
+      for (name in _ref) {
+        region = _ref[name];
         region.domElement().innerHTML = snapshot.regions[name];
       }
       if (restoreEditable) {
         this._regions = {};
-        ref1 = this._domRegions;
-        for (i = j = 0, len = ref1.length; j < len; i = ++j) {
-          domRegion = ref1[i];
+        _ref1 = this._domRegions;
+        for (i = _i = 0, _len = _ref1.length; _i < _len; i = ++_i) {
+          domRegion = _ref1[i];
           name = domRegion.getAttribute(this._namingProp);
           if (!name) {
             name = i;
@@ -7330,15 +7384,16 @@
     };
 
     _EditorApp.prototype.save = function() {
-      var args, child, html, modifiedRegions, name, passive, ref, region;
-      passive = arguments[0], args = 2 <= arguments.length ? slice.call(arguments, 1) : [];
-      if (!ContentEdit.Root.get().lastModified() && passive) {
+      var args, child, html, modifiedRegions, name, passive, region, root, _ref;
+      passive = arguments[0], args = 2 <= arguments.length ? __slice.call(arguments, 1) : [];
+      root = ContentEdit.Root.get();
+      if (root.lastModified() === this._rootLastModified && passive) {
         return;
       }
       modifiedRegions = {};
-      ref = this._regions;
-      for (name in ref) {
-        region = ref[name];
+      _ref = this._regions;
+      for (name in _ref) {
+        region = _ref[name];
         html = region.html();
         if (region.children.length === 1) {
           child = region.children[0];
@@ -7346,12 +7401,15 @@
             html = '';
           }
         }
-        modifiedRegions[name] = html;
         if (!passive) {
-          region.domElement().innerHTML = modifiedRegions[name];
+          region.domElement().innerHTML = html;
         }
+        if (region.lastModified() === this._regionsLastModified[name]) {
+          continue;
+        }
+        modifiedRegions[name] = html;
       }
-      return this.trigger.apply(this, ['save', modifiedRegions].concat(slice.call(args)));
+      return this.trigger.apply(this, ['save', modifiedRegions].concat(__slice.call(args)));
     };
 
     _EditorApp.prototype.setRegionOrder = function(regionNames) {
@@ -7359,25 +7417,26 @@
     };
 
     _EditorApp.prototype.start = function() {
-      var domRegion, i, j, len, name, ref;
+      var domRegion, i, name, _i, _len, _ref;
       this.busy(true);
       this._regions = {};
       this._orderedRegions = [];
-      ref = this._domRegions;
-      for (i = j = 0, len = ref.length; j < len; i = ++j) {
-        domRegion = ref[i];
+      _ref = this._domRegions;
+      for (i = _i = 0, _len = _ref.length; _i < _len; i = ++_i) {
+        domRegion = _ref[i];
         name = domRegion.getAttribute(this._namingProp);
         if (!name) {
           name = i;
         }
         this._regions[name] = new ContentEdit.Region(domRegion);
         this._orderedRegions.push(name);
+        this._regionsLastModified[name] = this._regions[name].lastModified();
       }
       this._preventEmptyRegions();
+      this._rootLastModified = ContentEdit.Root.get().lastModified();
       this.history = new ContentTools.History(this._regions);
       this.history.watch();
       this._state = ContentTools.EditorApp.EDITING;
-      ContentEdit.Root.get().commit();
       this._toolbox.show();
       this._inspector.show();
       return this.busy(false);
@@ -7398,8 +7457,8 @@
     _EditorApp.prototype._addDOMEventListeners = function() {
       this._handleHighlightOn = (function(_this) {
         return function(ev) {
-          var ref;
-          if ((ref = ev.keyCode) === 17 || ref === 224) {
+          var _ref;
+          if ((_ref = ev.keyCode) === 17 || _ref === 224) {
             _this._ctrlDown = true;
             return;
           }
@@ -7416,8 +7475,8 @@
       })(this);
       this._handleHighlightOff = (function(_this) {
         return function(ev) {
-          var ref;
-          if ((ref = ev.keyCode) === 17 || ref === 224) {
+          var _ref;
+          if ((_ref = ev.keyCode) === 17 || _ref === 224) {
             _this._ctrlDown = false;
             return;
           }
@@ -7448,18 +7507,19 @@
     };
 
     _EditorApp.prototype._preventEmptyRegions = function() {
-      var name, placeholder, ref, region, results;
-      ref = this._regions;
-      results = [];
-      for (name in ref) {
-        region = ref[name];
+      var name, placeholder, region, _ref, _results;
+      _ref = this._regions;
+      _results = [];
+      for (name in _ref) {
+        region = _ref[name];
         if (region.children.length > 0) {
           continue;
         }
         placeholder = new ContentEdit.Text('p', {}, '');
-        results.push(region.attach(placeholder));
+        region.attach(placeholder);
+        _results.push(region.commit());
       }
-      return results;
+      return _results;
     };
 
     _EditorApp.prototype._removeDOMEventListeners = function() {
@@ -7534,14 +7594,14 @@
     };
 
     History.prototype.replaceRegions = function(regions) {
-      var k, results, v;
+      var k, v, _results;
       this._regions = {};
-      results = [];
+      _results = [];
       for (k in regions) {
         v = regions[k];
-        results.push(this._regions[k] = v);
+        _results.push(this._regions[k] = v);
       }
-      return results;
+      return _results;
     };
 
     History.prototype.restoreSelection = function(snapshot) {
@@ -7600,14 +7660,14 @@
     };
 
     History.prototype._store = function() {
-      var element, name, other_region, ref, ref1, region, snapshot;
+      var element, name, other_region, region, snapshot, _ref, _ref1;
       snapshot = {
         regions: {},
         selected: null
       };
-      ref = this._regions;
-      for (name in ref) {
-        region = ref[name];
+      _ref = this._regions;
+      for (name in _ref) {
+        region = _ref[name];
         snapshot.regions[name] = region.html();
       }
       element = ContentEdit.Root.get().focused();
@@ -7616,9 +7676,12 @@
         region = element.closest(function(node) {
           return node.constructor.name === 'Region';
         });
-        ref1 = this._regions;
-        for (name in ref1) {
-          other_region = ref1[name];
+        if (!region) {
+          return;
+        }
+        _ref1 = this._regions;
+        for (name in _ref1) {
+          other_region = _ref1[name];
           if (region === other_region) {
             snapshot.selected.region = name;
             break;
@@ -7747,8 +7810,8 @@
 
   })();
 
-  ContentTools.Tools.Bold = (function(superClass) {
-    extend(Bold, superClass);
+  ContentTools.Tools.Bold = (function(_super) {
+    __extends(Bold, _super);
 
     function Bold() {
       return Bold.__super__.constructor.apply(this, arguments);
@@ -7770,11 +7833,11 @@
     };
 
     Bold.isApplied = function(element, selection) {
-      var from, ref, to;
+      var from, to, _ref;
       if (element.content === void 0 || !element.content.length()) {
         return false;
       }
-      ref = selection.get(), from = ref[0], to = ref[1];
+      _ref = selection.get(), from = _ref[0], to = _ref[1];
       if (from === to) {
         to += 1;
       }
@@ -7782,9 +7845,9 @@
     };
 
     Bold.apply = function(element, selection, callback) {
-      var from, ref, to;
+      var from, to, _ref;
       element.storeState();
-      ref = selection.get(), from = ref[0], to = ref[1];
+      _ref = selection.get(), from = _ref[0], to = _ref[1];
       if (this.isApplied(element, selection)) {
         element.content = element.content.unformat(from, to, new HTMLString.Tag(this.tagName));
       } else {
@@ -7800,8 +7863,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.Italic = (function(superClass) {
-    extend(Italic, superClass);
+  ContentTools.Tools.Italic = (function(_super) {
+    __extends(Italic, _super);
 
     function Italic() {
       return Italic.__super__.constructor.apply(this, arguments);
@@ -7819,8 +7882,8 @@
 
   })(ContentTools.Tools.Bold);
 
-  ContentTools.Tools.Link = (function(superClass) {
-    extend(Link, superClass);
+  ContentTools.Tools.Link = (function(_super) {
+    __extends(Link, _super);
 
     function Link() {
       return Link.__super__.constructor.apply(this, arguments);
@@ -7835,23 +7898,23 @@
     Link.tagName = 'a';
 
     Link.getHref = function(element, selection) {
-      var c, from, j, l, len, len1, ref, ref1, ref2, selectedContent, tag, to;
+      var c, from, selectedContent, tag, to, _i, _j, _len, _len1, _ref, _ref1, _ref2;
       if (element.constructor.name === 'Image') {
         if (element.a) {
           return element.a.href;
         }
       } else {
-        ref = selection.get(), from = ref[0], to = ref[1];
+        _ref = selection.get(), from = _ref[0], to = _ref[1];
         selectedContent = element.content.slice(from, to);
-        ref1 = selectedContent.characters;
-        for (j = 0, len = ref1.length; j < len; j++) {
-          c = ref1[j];
+        _ref1 = selectedContent.characters;
+        for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
+          c = _ref1[_i];
           if (!c.hasTags('a')) {
             continue;
           }
-          ref2 = c.tags();
-          for (l = 0, len1 = ref2.length; l < len1; l++) {
-            tag = ref2[l];
+          _ref2 = c.tags();
+          for (_j = 0, _len1 = _ref2.length; _j < _len1; _j++) {
+            tag = _ref2[_j];
             if (tag.name() === 'a') {
               return tag.attr('href');
             }
@@ -7878,7 +7941,7 @@
     };
 
     Link.apply = function(element, selection, callback) {
-      var allowScrolling, app, applied, dialog, domElement, from, measureSpan, modal, rect, ref, selectTag, to, transparent;
+      var allowScrolling, app, applied, dialog, domElement, from, measureSpan, modal, rect, selectTag, to, transparent, _ref;
       applied = false;
       if (element.constructor.name === 'Image') {
         rect = element.domElement().getBoundingClientRect();
@@ -7887,7 +7950,7 @@
         selectTag = new HTMLString.Tag('span', {
           'class': 'ct--puesdo-select'
         });
-        ref = selection.get(), from = ref[0], to = ref[1];
+        _ref = selection.get(), from = _ref[0], to = _ref[1];
         element.content = element.content.format(from, to, selectTag);
         element.updateInnerHTML();
         domElement = element.domElement();
@@ -7943,8 +8006,8 @@
 
   })(ContentTools.Tools.Bold);
 
-  ContentTools.Tools.Heading = (function(superClass) {
-    extend(Heading, superClass);
+  ContentTools.Tools.Heading = (function(_super) {
+    __extends(Heading, _super);
 
     function Heading() {
       return Heading.__super__.constructor.apply(this, arguments);
@@ -7986,8 +8049,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.Subheading = (function(superClass) {
-    extend(Subheading, superClass);
+  ContentTools.Tools.Subheading = (function(_super) {
+    __extends(Subheading, _super);
 
     function Subheading() {
       return Subheading.__super__.constructor.apply(this, arguments);
@@ -7995,7 +8058,7 @@
 
     ContentTools.ToolShelf.stow(Subheading, 'subheading');
 
-    Subheading.label = 'Subeading';
+    Subheading.label = 'Subheading';
 
     Subheading.icon = 'subheading';
 
@@ -8005,8 +8068,8 @@
 
   })(ContentTools.Tools.Heading);
 
-  ContentTools.Tools.Paragraph = (function(superClass) {
-    extend(Paragraph, superClass);
+  ContentTools.Tools.Paragraph = (function(_super) {
+    __extends(Paragraph, _super);
 
     function Paragraph() {
       return Paragraph.__super__.constructor.apply(this, arguments);
@@ -8048,8 +8111,8 @@
 
   })(ContentTools.Tools.Heading);
 
-  ContentTools.Tools.Preformatted = (function(superClass) {
-    extend(Preformatted, superClass);
+  ContentTools.Tools.Preformatted = (function(_super) {
+    __extends(Preformatted, _super);
 
     function Preformatted() {
       return Preformatted.__super__.constructor.apply(this, arguments);
@@ -8081,8 +8144,8 @@
 
   })(ContentTools.Tools.Heading);
 
-  ContentTools.Tools.AlignLeft = (function(superClass) {
-    extend(AlignLeft, superClass);
+  ContentTools.Tools.AlignLeft = (function(_super) {
+    __extends(AlignLeft, _super);
 
     function AlignLeft() {
       return AlignLeft.__super__.constructor.apply(this, arguments);
@@ -8101,24 +8164,24 @@
     };
 
     AlignLeft.isApplied = function(element, selection) {
-      var ref;
+      var _ref;
       if (!this.canApply(element)) {
         return false;
       }
-      if ((ref = element.constructor.name) === 'ListItemText' || ref === 'TableCellText') {
+      if ((_ref = element.constructor.name) === 'ListItemText' || _ref === 'TableCellText') {
         element = element.parent();
       }
       return element.hasCSSClass(this.className);
     };
 
     AlignLeft.apply = function(element, selection, callback) {
-      var className, j, len, ref, ref1;
-      if ((ref = element.constructor.name) === 'ListItemText' || ref === 'TableCellText') {
+      var className, _i, _len, _ref, _ref1;
+      if ((_ref = element.constructor.name) === 'ListItemText' || _ref === 'TableCellText') {
         element = element.parent();
       }
-      ref1 = ['text-center', 'text-left', 'text-right'];
-      for (j = 0, len = ref1.length; j < len; j++) {
-        className = ref1[j];
+      _ref1 = ['text-center', 'text-left', 'text-right'];
+      for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
+        className = _ref1[_i];
         if (element.hasCSSClass(className)) {
           element.removeCSSClass(className);
           if (className === this.className) {
@@ -8134,8 +8197,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.AlignCenter = (function(superClass) {
-    extend(AlignCenter, superClass);
+  ContentTools.Tools.AlignCenter = (function(_super) {
+    __extends(AlignCenter, _super);
 
     function AlignCenter() {
       return AlignCenter.__super__.constructor.apply(this, arguments);
@@ -8153,8 +8216,8 @@
 
   })(ContentTools.Tools.AlignLeft);
 
-  ContentTools.Tools.AlignRight = (function(superClass) {
-    extend(AlignRight, superClass);
+  ContentTools.Tools.AlignRight = (function(_super) {
+    __extends(AlignRight, _super);
 
     function AlignRight() {
       return AlignRight.__super__.constructor.apply(this, arguments);
@@ -8172,8 +8235,8 @@
 
   })(ContentTools.Tools.AlignLeft);
 
-  ContentTools.Tools.UnorderedList = (function(superClass) {
-    extend(UnorderedList, superClass);
+  ContentTools.Tools.UnorderedList = (function(_super) {
+    __extends(UnorderedList, _super);
 
     function UnorderedList() {
       return UnorderedList.__super__.constructor.apply(this, arguments);
@@ -8188,8 +8251,8 @@
     UnorderedList.listTag = 'ul';
 
     UnorderedList.canApply = function(element, selection) {
-      var ref;
-      return element.content !== void 0 && ((ref = element.parent().constructor.name) === 'Region' || ref === 'ListItem');
+      var _ref;
+      return element.content !== void 0 && ((_ref = element.parent().constructor.name) === 'Region' || _ref === 'ListItem');
     };
 
     UnorderedList.apply = function(element, selection, callback) {
@@ -8221,8 +8284,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.OrderedList = (function(superClass) {
-    extend(OrderedList, superClass);
+  ContentTools.Tools.OrderedList = (function(_super) {
+    __extends(OrderedList, _super);
 
     function OrderedList() {
       return OrderedList.__super__.constructor.apply(this, arguments);
@@ -8240,8 +8303,8 @@
 
   })(ContentTools.Tools.UnorderedList);
 
-  ContentTools.Tools.Table = (function(superClass) {
-    extend(Table, superClass);
+  ContentTools.Tools.Table = (function(_super) {
+    __extends(Table, _super);
 
     function Table() {
       return Table.__super__.constructor.apply(this, arguments);
@@ -8281,7 +8344,7 @@
       })(this));
       dialog.bind('save', (function(_this) {
         return function(tableCfg) {
-          var index, keepFocus, node, ref;
+          var index, keepFocus, node, _ref;
           dialog.unbind('save');
           keepFocus = true;
           if (table) {
@@ -8291,7 +8354,7 @@
             });
           } else {
             table = _this._createTable(tableCfg);
-            ref = _this._insertAt(element), node = ref[0], index = ref[1];
+            _ref = _this._insertAt(element), node = _ref[0], index = _ref[1];
             node.parent().attach(table, index);
             keepFocus = false;
           }
@@ -8312,41 +8375,41 @@
     };
 
     Table._adjustColumns = function(section, columns) {
-      var cell, cellTag, cellText, currentColumns, diff, i, j, len, ref, results, row;
-      ref = section.children;
-      results = [];
-      for (j = 0, len = ref.length; j < len; j++) {
-        row = ref[j];
+      var cell, cellTag, cellText, currentColumns, diff, i, row, _i, _len, _ref, _results;
+      _ref = section.children;
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        row = _ref[_i];
         cellTag = row.children[0].tagName();
         currentColumns = row.children.length;
         diff = columns - currentColumns;
         if (diff < 0) {
-          results.push((function() {
-            var l, ref1, results1;
-            results1 = [];
-            for (i = l = ref1 = diff; ref1 <= 0 ? l < 0 : l > 0; i = ref1 <= 0 ? ++l : --l) {
+          _results.push((function() {
+            var _j, _results1;
+            _results1 = [];
+            for (i = _j = diff; diff <= 0 ? _j < 0 : _j > 0; i = diff <= 0 ? ++_j : --_j) {
               cell = row.children[row.children.length - 1];
-              results1.push(row.detach(cell));
+              _results1.push(row.detach(cell));
             }
-            return results1;
+            return _results1;
           })());
         } else if (diff > 0) {
-          results.push((function() {
-            var l, ref1, results1;
-            results1 = [];
-            for (i = l = 0, ref1 = diff; 0 <= ref1 ? l < ref1 : l > ref1; i = 0 <= ref1 ? ++l : --l) {
+          _results.push((function() {
+            var _j, _results1;
+            _results1 = [];
+            for (i = _j = 0; 0 <= diff ? _j < diff : _j > diff; i = 0 <= diff ? ++_j : --_j) {
               cell = new ContentEdit.TableCell(cellTag);
               row.attach(cell);
               cellText = new ContentEdit.TableCellText('');
-              results1.push(cell.attach(cellText));
+              _results1.push(cell.attach(cellText));
             }
-            return results1;
+            return _results1;
           })());
         } else {
-          results.push(void 0);
+          _results.push(void 0);
         }
       }
-      return results;
+      return _results;
     };
 
     Table._createTable = function(tableCfg) {
@@ -8366,11 +8429,11 @@
     };
 
     Table._createTableSection = function(sectionTag, cellTag, columns) {
-      var cell, cellText, i, j, ref, row, section;
+      var cell, cellText, i, row, section, _i;
       section = new ContentEdit.TableSection(sectionTag);
       row = new ContentEdit.TableRow();
       section.attach(row);
-      for (i = j = 0, ref = columns; 0 <= ref ? j < ref : j > ref; i = 0 <= ref ? ++j : --j) {
+      for (i = _i = 0; 0 <= columns ? _i < columns : _i > columns; i = 0 <= columns ? ++_i : --_i) {
         cell = new ContentEdit.TableCell(cellTag);
         row.attach(cell);
         cellText = new ContentEdit.TableCellText('');
@@ -8380,7 +8443,7 @@
     };
 
     Table._updateTable = function(tableCfg, table) {
-      var columns, foot, head, j, len, ref, section;
+      var columns, foot, head, section, _i, _len, _ref;
       if (!tableCfg.head && table.thead()) {
         table.detach(table.thead());
       }
@@ -8389,9 +8452,9 @@
       }
       columns = table.firstSection().children[0].children.length;
       if (tableCfg.columns !== columns) {
-        ref = table.children;
-        for (j = 0, len = ref.length; j < len; j++) {
-          section = ref[j];
+        _ref = table.children;
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          section = _ref[_i];
           this._adjustColumns(section, tableCfg.columns);
         }
       }
@@ -8409,8 +8472,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.Indent = (function(superClass) {
-    extend(Indent, superClass);
+  ContentTools.Tools.Indent = (function(_super) {
+    __extends(Indent, _super);
 
     function Indent() {
       return Indent.__super__.constructor.apply(this, arguments);
@@ -8435,8 +8498,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.Unindent = (function(superClass) {
-    extend(Unindent, superClass);
+  ContentTools.Tools.Unindent = (function(_super) {
+    __extends(Unindent, _super);
 
     function Unindent() {
       return Unindent.__super__.constructor.apply(this, arguments);
@@ -8461,8 +8524,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.LineBreak = (function(superClass) {
-    extend(LineBreak, superClass);
+  ContentTools.Tools.LineBreak = (function(_super) {
+    __extends(LineBreak, _super);
 
     function LineBreak() {
       return LineBreak.__super__.constructor.apply(this, arguments);
@@ -8496,8 +8559,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.Image = (function(superClass) {
-    extend(Image, superClass);
+  ContentTools.Tools.Image = (function(_super) {
+    __extends(Image, _super);
 
     function Image() {
       return Image.__super__.constructor.apply(this, arguments);
@@ -8534,7 +8597,7 @@
       })(this));
       dialog.bind('save', (function(_this) {
         return function(imageURL, imageSize, imageAttrs) {
-          var image, index, node, ref;
+          var image, index, node, _ref;
           dialog.unbind('save');
           if (!imageAttrs) {
             imageAttrs = {};
@@ -8543,7 +8606,7 @@
           imageAttrs.src = imageURL;
           imageAttrs.width = imageSize[0];
           image = new ContentEdit.Image(imageAttrs);
-          ref = _this._insertAt(element), node = ref[0], index = ref[1];
+          _ref = _this._insertAt(element), node = _ref[0], index = _ref[1];
           node.parent().attach(image, index);
           image.focus();
           modal.hide();
@@ -8561,8 +8624,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.Video = (function(superClass) {
-    extend(Video, superClass);
+  ContentTools.Tools.Video = (function(_super) {
+    __extends(Video, _super);
 
     function Video() {
       return Video.__super__.constructor.apply(this, arguments);
@@ -8599,7 +8662,7 @@
       })(this));
       dialog.bind('save', (function(_this) {
         return function(videoURL) {
-          var index, node, ref, video;
+          var index, node, video, _ref;
           dialog.unbind('save');
           if (videoURL) {
             video = new ContentEdit.Video('iframe', {
@@ -8608,7 +8671,7 @@
               'src': videoURL,
               'width': ContentTools.DEFAULT_VIDEO_WIDTH
             });
-            ref = _this._insertAt(element), node = ref[0], index = ref[1];
+            _ref = _this._insertAt(element), node = _ref[0], index = _ref[1];
             node.parent().attach(video, index);
             video.focus();
           } else {
@@ -8631,8 +8694,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.Undo = (function(superClass) {
-    extend(Undo, superClass);
+  ContentTools.Tools.Undo = (function(_super) {
+    __extends(Undo, _super);
 
     function Undo() {
       return Undo.__super__.constructor.apply(this, arguments);
@@ -8663,8 +8726,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.Redo = (function(superClass) {
-    extend(Redo, superClass);
+  ContentTools.Tools.Redo = (function(_super) {
+    __extends(Redo, _super);
 
     function Redo() {
       return Redo.__super__.constructor.apply(this, arguments);
@@ -8695,8 +8758,8 @@
 
   })(ContentTools.Tool);
 
-  ContentTools.Tools.Remove = (function(superClass) {
-    extend(Remove, superClass);
+  ContentTools.Tools.Remove = (function(_super) {
+    __extends(Remove, _super);
 
     function Remove() {
       return Remove.__super__.constructor.apply(this, arguments);
@@ -8716,6 +8779,11 @@
       var app, list, row, table;
       app = ContentTools.EditorApp.get();
       element.blur();
+      if (element.nextContent()) {
+        element.nextContent().focus();
+      } else if (element.previousContent()) {
+        element.previousContent().focus();
+      }
       switch (element.constructor.name) {
         case 'ListItemText':
           if (app.ctrlDown()) {
@@ -8749,8 +8817,8 @@
 
   })(ContentTools.Tool);
 
-  SetColorPrimary = (function(superClass) {
-    extend(SetColorPrimary, superClass);
+  SetColorPrimary = (function(_super) {
+    __extends(SetColorPrimary, _super);
 
     function SetColorPrimary() {
       return SetColorPrimary.__super__.constructor.apply(this, arguments);
@@ -8769,24 +8837,24 @@
     };
 
     SetColorPrimary.isApplied = function(element, selection) {
-      var ref;
+      var _ref;
       if (!this.canApply(element)) {
         return false;
       }
-      if ((ref = element.constructor.name) === 'ListItemText' || ref === 'TableCellText') {
+      if ((_ref = element.constructor.name) === 'ListItemText' || _ref === 'TableCellText') {
         element = element.parent();
       }
       return element.hasCSSClass(this.className);
     };
 
     SetColorPrimary.apply = function(element, selection, callback) {
-      var className, j, len, ref, ref1;
-      if ((ref = element.constructor.name) === 'ListItemText' || ref === 'TableCellText') {
+      var className, _i, _len, _ref, _ref1;
+      if ((_ref = element.constructor.name) === 'ListItemText' || _ref === 'TableCellText') {
         element = element.parent();
       }
-      ref1 = ['text-default', 'bg-primary', 'bg-success', 'bg-info', 'bg-warning', 'bg-danger'];
-      for (j = 0, len = ref1.length; j < len; j++) {
-        className = ref1[j];
+      _ref1 = ['text-default', 'bg-primary', 'bg-success', 'bg-info', 'bg-warning', 'bg-danger'];
+      for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
+        className = _ref1[_i];
         if (element.hasCSSClass(className)) {
           element.removeCSSClass(className);
           if (className === this.className) {
@@ -8802,8 +8870,8 @@
 
   })(ContentTools.Tools.Bold);
 
-  SetColorDefault = (function(superClass) {
-    extend(SetColorDefault, superClass);
+  SetColorDefault = (function(_super) {
+    __extends(SetColorDefault, _super);
 
     function SetColorDefault() {
       return SetColorDefault.__super__.constructor.apply(this, arguments);
@@ -8821,8 +8889,8 @@
 
   })(SetColorPrimary);
 
-  SetColorSuccess = (function(superClass) {
-    extend(SetColorSuccess, superClass);
+  SetColorSuccess = (function(_super) {
+    __extends(SetColorSuccess, _super);
 
     function SetColorSuccess() {
       return SetColorSuccess.__super__.constructor.apply(this, arguments);
@@ -8840,8 +8908,8 @@
 
   })(SetColorPrimary);
 
-  SetColorDanger = (function(superClass) {
-    extend(SetColorDanger, superClass);
+  SetColorDanger = (function(_super) {
+    __extends(SetColorDanger, _super);
 
     function SetColorDanger() {
       return SetColorDanger.__super__.constructor.apply(this, arguments);
@@ -8859,8 +8927,8 @@
 
   })(SetColorPrimary);
 
-  SetColorWarning = (function(superClass) {
-    extend(SetColorWarning, superClass);
+  SetColorWarning = (function(_super) {
+    __extends(SetColorWarning, _super);
 
     function SetColorWarning() {
       return SetColorWarning.__super__.constructor.apply(this, arguments);
@@ -8878,8 +8946,8 @@
 
   })(SetColorPrimary);
 
-  SetColorInfo = (function(superClass) {
-    extend(SetColorInfo, superClass);
+  SetColorInfo = (function(_super) {
+    __extends(SetColorInfo, _super);
 
     function SetColorInfo() {
       return SetColorInfo.__super__.constructor.apply(this, arguments);

@@ -38,7 +38,6 @@ describe 'ContentTools.ModalUI', () ->
             editor.attach(modal)
             modal.show()
             expect(modal.isMounted()).toBe true
-            editor.detatch(modal)
 
         it 'should apply transparent flag', () ->
 
@@ -50,8 +49,6 @@ describe 'ContentTools.ModalUI', () ->
             # Check transparency flag is set
             classes = modal.domElement().getAttribute('class').split(' ')
             expect(classes.indexOf('ct-modal--transparent') > -1).toBe true
-
-            editor.detatch(modal)
 
         it 'should apply no-scrolling flag', () ->
 
@@ -74,7 +71,6 @@ describe 'ContentTools.ModalUI', () ->
             modal.show()
             modal.unmount()
             expect(modal.isMounted()).toBe false
-            editor.detatch(modal)
 
         it 'should remove no-scrolling flag', () ->
 
@@ -110,11 +106,8 @@ describe 'ContentTools.ModalUI', () ->
             modal.bind('click', foo.handleFoo)
 
             # Create a fake click event against the modal's DOM element
-            clickEvent = new MouseEvent('click', {
-                'view': window,
-                'bubbles': true,
-                'cancelable': true
-                })
+            clickEvent = document.createEvent('CustomEvent')
+            clickEvent.initCustomEvent('click', false, false, null)
             modal.domElement().dispatchEvent(clickEvent)
 
             expect(foo.handleFoo).toHaveBeenCalled()
